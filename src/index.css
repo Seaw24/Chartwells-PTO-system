@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Design tokens — authored in OKLCH. A deep navy chrome (the branded spine) wraps a bright,
+  layered light workspace; a single warm ember accent (persimmon) carries actions and selection.
+  Warm-on-cool is the whole idea: the cool navy + cool neutrals make the warm accent feel
+  intentional and expensive. Neutrals are tinted toward the navy hue (256) so nothing is a dead
+  gray; no pure black or white anywhere. Each semantic colour keeps four roles so status stays
+  AA-legible on tints: base (indicator) / -soft (fill) / -ink (text on soft) / -strong (fill under white).
+  Danger sits in rose-red (hue 14) and the accent in orange-coral (hue 40) so the two warm hues never
+  read as the same colour. Dark mode is the [data-theme="dark"] flip below (prepared, not applied).
+*/
+:root {
+  /* Chrome — deep navy, the branded spine (sidebar, top bar, login). */
+  --c-navy: oklch(25.5% 0.05 257);
+  --c-navy-700: oklch(30% 0.052 257); /* lifted nav surface / hover */
+  --c-navy-600: oklch(39% 0.045 256); /* dividers + borders on navy */
+  --c-navy-fg: oklch(96% 0.008 248); /* primary text on navy */
+  --c-navy-fg-mute: oklch(73% 0.025 250); /* inactive nav labels on navy */
+
+  /* Accent — warm ember / persimmon. Bright base for thin indicators; deep -strong for fills. */
+  --c-accent: oklch(70% 0.175 41); /* selection rail, focus, dots, live arcs */
+  --c-accent-strong: oklch(58% 0.158 38); /* solid fills under white text (AA) */
+  --c-accent-hover: oklch(53% 0.15 37);
+  --c-accent-ink: oklch(53% 0.155 37); /* accent-coloured text on light */
+  --c-accent-soft: oklch(95.5% 0.03 52); /* warm tint fill */
+  --c-accent-line: oklch(87% 0.06 48); /* tinted hairline */
+
+  /* Status — restrained. Danger pushed to rose so it never collides with the warm accent. */
+  --c-success: oklch(64% 0.14 159);
+  --c-success-soft: oklch(95.5% 0.04 162);
+  --c-success-ink: oklch(48% 0.115 160);
+  --c-success-strong: oklch(53.5% 0.125 159);
+  --c-warning: oklch(74% 0.13 76);
+  --c-warning-soft: oklch(95.5% 0.05 84);
+  --c-warning-ink: oklch(52% 0.095 70);
+  --c-warning-strong: oklch(66% 0.12 74);
+  --c-danger: oklch(60% 0.205 16);
+  --c-danger-soft: oklch(95% 0.035 14);
+  --c-danger-ink: oklch(53% 0.19 16);
+  --c-danger-strong: oklch(56% 0.195 16);
+
+  /* Surfaces — three layers with real separation. Card lifts off the field; panel insets into it. */
+  --c-surface: oklch(96.8% 0.006 256); /* page field */
+  --c-card: oklch(99.6% 0.0015 256); /* raised cards, popovers */
+  --c-panel: oklch(94.6% 0.007 256); /* insets, table heads, hover wells */
+
+  /* Ink — near-navy, never pure black. */
+  --c-ink: oklch(27% 0.03 256);
+  --c-ink-soft: oklch(44% 0.025 256);
+  --c-ink-mute: oklch(53.5% 0.022 256);
+
+  /* Lines */
+  --c-line: oklch(90.5% 0.009 256);
+  --c-line-soft: oklch(93.8% 0.006 256);
+
+  /* Motion: one curve family, three durations; nothing over 240ms on a repeated path. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1); /* alias used by ProgressRing + inline transitions */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 240ms;
+
+  color-scheme: light;
+}
+
+/* Dark mode — prepared, not applied. Deepest navy field, lifted ink, warm accent holds and brightens. */
+[data-theme='dark'] {
+  --c-navy: oklch(20% 0.04 256);
+  --c-navy-700: oklch(26% 0.045 256);
+  --c-navy-600: oklch(36% 0.04 256);
+  --c-navy-fg: oklch(94% 0.01 250);
+  --c-navy-fg-mute: oklch(68% 0.025 252);
+
+  --c-accent: oklch(74% 0.16 44);
+  --c-accent-strong: oklch(67% 0.16 42);
+  --c-accent-hover: oklch(72% 0.16 43);
+  --c-accent-ink: oklch(78% 0.13 46);
+  --c-accent-soft: oklch(34% 0.07 40);
+  --c-accent-line: oklch(44% 0.09 42);
+
+  --c-success: oklch(72% 0.14 160);
+  --c-success-soft: oklch(34% 0.06 162);
+  --c-success-ink: oklch(82% 0.13 162);
+  --c-success-strong: oklch(64% 0.14 160);
+  --c-warning: oklch(80% 0.13 80);
+  --c-warning-soft: oklch(36% 0.06 80);
+  --c-warning-ink: oklch(86% 0.12 84);
+  --c-warning-strong: oklch(72% 0.13 78);
+  --c-danger: oklch(68% 0.19 18);
+  --c-danger-soft: oklch(34% 0.09 16);
+  --c-danger-ink: oklch(80% 0.15 20);
+  --c-danger-strong: oklch(62% 0.2 17);
+
+  --c-surface: oklch(17% 0.025 256);
+  --c-card: oklch(21% 0.03 256);
+  --c-panel: oklch(25% 0.032 256);
+
+  --c-ink: oklch(95% 0.01 256);
+  --c-ink-soft: oklch(76% 0.02 256);
+  --c-ink-mute: oklch(62% 0.02 256);
+
+  --c-line: oklch(30% 0.03 256);
+  --c-line-soft: oklch(26% 0.028 256);
+
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--c-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--c-surface);
+    color: var(--c-ink);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.018em;
+  }
+
+  /* Form controls inherit the type ramp; checkboxes/radios/date pickers pick up the warm accent. */
+  input, button, textarea, select {
+    font: inherit;
+  }
+  [type='checkbox'], [type='radio'] {
+    accent-color: var(--c-accent-strong);
+  }
+  input[type='date'] {
+    color-scheme: light;
+  }
+
+  /* Warm ember focus ring on keyboard nav. */
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+    border-radius: 5px;
+  }
+
+  ::selection {
+    background: var(--c-accent-soft);
+  }
+}
+
+@layer components {
+  /* Tabular figures — used anywhere numbers line up or tick (balances, counts, dates). */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The one small-caps label voice: section eyebrows, table heads, metadata keys. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--c-ink-mute);
+  }
+
+  /* Diagonal hatch for blackout periods (pattern + label, never colour alone). */
+  .hatch-danger {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      color-mix(in oklch, var(--c-danger) 14%, transparent),
+      color-mix(in oklch, var(--c-danger) 14%, transparent) 5px,
+      transparent 5px,
+      transparent 10px
+    );
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--c-panel);
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--c-card) 70%, transparent),
+      transparent
+    );
+    animation: shimmer 1.4s infinite;
+  }
+}
+
+@layer utilities {
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-line) transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background: var(--c-line);
+    border-radius: 99px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Slim scrollbar tuned for the dark navy rail. */
+  .scrollbar-navy {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-navy-600) transparent;
+  }
+  .scrollbar-navy::-webkit-scrollbar {
+    width: 8px;
+  }
+  .scrollbar-navy::-webkit-scrollbar-thumb {
+    background: var(--c-navy-600);
+    border-radius: 99px;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
