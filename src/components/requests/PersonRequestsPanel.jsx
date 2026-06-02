@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { differenceInCalendarDays, format } from 'date-fns';
 import { Check, X, Ban, Clock } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useDataSource } from '../../data/dataSource';
 import { PTO_TYPES, DEFAULT_BALANCES, ptoTypeById, userById, teamById } from '../../utils/constants';
 import { fmtRange, businessDays, toDate } from '../../utils/dateHelpers';
 import Modal from '../ui/Modal';
@@ -24,9 +24,30 @@ const STATUS_ICON = { approved: Check, pending: Clock, denied: X, cancelled: Ban
 const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
 export default function PersonRequestsPanel({ userId, open, onClose, onOpenRequest }) {
-  const { requestsForUser, balanceFor } = useDemoContext();
+  const { requestsForUser, balanceFor } = useDataSource();
+  const [data, setData] = useState(null);
   const member = userById(userId);
-  const requests = userId ? requestsForUser(userId) : [];
+
+  useEffect(() => {
+    let alive = true;
+    if (!userId) {
+      setData(null);
+      return () => { alive = false; };
+    }
+    setData(null);
+    Promise.all([
+      requestsForUser(userId),
+      Promise.all(PTO_TYPES.map((t) => balanceFor(userId, t.id))),
+    ]).then(([requests, balances]) => {
+      if (!alive) return;
+      const balanceByType = {};
+      PTO_TYPES.forEach((t, i) => { balanceByType[t.id] = balances[i]; });
+      setData({ requests, balanceByType });
+    });
+    return () => { alive = false; };
+  }, [userId]);
+
+  const requests = data?.requests ?? [];
 
   // Pick the year with the most activity for the timeline (seed data is 2026).
   const year = useMemo(() => {
@@ -65,7 +86,7 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
     [requests]
   );
 
-  if (!member) return null;
+  if (!member || data === null) return null;
 
   return (
     <Modal open={open} onClose={onClose} title="Time-off history" size="xl">
@@ -85,7 +106,7 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
           <div className="flex flex-wrap gap-1.5">
             {PTO_TYPES.map((t) => {
               const total = DEFAULT_BALANCES[t.id];
-              const left = balanceFor(member.id, t.id);
+              const left = data.balanceByType[t.id];
               return (
                 <span
                   key={t.id}

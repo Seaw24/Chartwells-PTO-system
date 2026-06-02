@@ -4,6 +4,7 @@
 //   navy "Request time off" card is the one bold accent surface, earning its weight.
 // References: Deel home cards; Linear/Height dashboard density; avoids the hero-metric cliché.
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { startOfWeek, endOfWeek } from 'date-fns';
 import {
   CalendarPlus,
@@ -13,9 +14,11 @@ import {
   Plane,
   AlertOctagon,
 } from 'lucide-react';
-import { useDemoContext } from '../hooks/useDemoContext';
+import { useDataSource } from '../data/dataSource';
+import { useCurrentUser } from '../data/session';
+import { useToday } from '../data/today';
 import { useRequestModal } from '../components/requests/RequestModalProvider';
-import { canApprove, isGodAdmin, firstName, ptoTypeById, teamById, TEAMS } from '../utils/constants';
+import { canApprove, isGodAdmin, firstName, ptoTypeById, TEAMS } from '../utils/constants';
 import {
   toDate,
   toISO,
@@ -35,12 +38,79 @@ import MiniCalendar from '../components/calendar/MiniCalendar';
 import PtoTypeIcon from '../components/ui/PtoTypeIcon';
 
 export default function Dashboard() {
-  const ctx = useDemoContext();
-  const { activeUser, todayIso, requestsForUser } = ctx;
+  const activeUser = useCurrentUser();
+  const todayIso = useToday();
+  const { requestsForUser, getRequests, getUsers, pendingForApprover, teamMembers, balanceFor, getBlackouts, outOnDay } = useDataSource();
   const { openRequest } = useRequestModal();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    async function load() {
+      const approver = canApprove(activeUser.role);
+      const god = isGodAdmin(activeUser.role);
+      const adminTeam = activeUser.role === 'admin' ? activeUser.team : null;
+      const [
+        myRequests,
+        requests,
+        users,
+        pending,
+        members,
+        blackouts,
+        outToday,
+        teamMembersList,
+        outByTeamList,
+      ] = await Promise.all([
+        requestsForUser(activeUser.id),
+        getRequests(),
+        getUsers(),
+        approver ? pendingForApprover() : Promise.resolve([]),
+        approver ? teamMembers(adminTeam) : Promise.resolve([]),
+        god ? getBlackouts() : Promise.resolve([]),
+        god ? outOnDay(todayIso) : Promise.resolve([]),
+        god ? Promise.all(TEAMS.map((t) => teamMembers(t.id))) : Promise.resolve([]),
+        god ? Promise.all(TEAMS.map((t) => outOnDay(todayIso, t.id))) : Promise.resolve([]),
+      ]);
+      const balanceRows = approver
+        ? await Promise.all(
+            members.map((m) =>
+              Promise.all([balanceFor(m.id, 'vacation'), balanceFor(m.id, 'sick')]).then(([vacation, sick]) => ({
+                id: m.id,
+                vacation,
+                sick,
+              }))
+            )
+          )
+        : [];
+      if (!alive) return;
+      const balancesByMember = {};
+      balanceRows.forEach((row) => { balancesByMember[row.id] = row; });
+      const teamMembersByTeam = {};
+      const outTodayByTeam = {};
+      TEAMS.forEach((t, i) => {
+        teamMembersByTeam[t.id] = teamMembersList[i] ?? [];
+        outTodayByTeam[t.id] = outByTeamList[i] ?? [];
+      });
+      setData({
+        myRequests,
+        requests,
+        users,
+        pending,
+        members,
+        blackouts,
+        outToday,
+        teamMembersByTeam,
+        outTodayByTeam,
+        balancesByMember,
+      });
+    }
+    load();
+    return () => { alive = false; };
+  }, [activeUser.id, activeUser.role, activeUser.team, todayIso]);
 
   const greeting = getGreeting();
-  const myRequests = requestsForUser(activeUser.id);
+  const myRequests = data?.myRequests ?? [];
   const upcoming = myRequests
     .filter((r) => r.status === 'approved' && toDate(r.end) >= toDate(todayIso))
     .sort((a, b) => (a.start > b.start ? 1 : -1))
@@ -48,6 +118,8 @@ export default function Dashboard() {
   const activity = [...myRequests]
     .sort((a, b) => ((a.decidedAt || a.submittedAt) < (b.decidedAt || b.submittedAt) ? 1 : -1))
     .slice(0, 5);
+
+  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
 
   return (
     <div className="space-y-6">
@@ -64,8 +136,26 @@ export default function Dashboard() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main column */}
         <div className="space-y-6 lg:col-span-2">
-          {canApprove(activeUser.role) && <AdminPanels ctx={ctx} />}
-          {isGodAdmin(activeUser.role) && <GodAdminPanels ctx={ctx} />}
+          {canApprove(activeUser.role) && (
+            <AdminPanels
+              activeUser={activeUser}
+              todayIso={todayIso}
+              requests={data.requests}
+              pending={data.pending}
+              members={data.members}
+              balancesByMember={data.balancesByMember}
+            />
+          )}
+          {isGodAdmin(activeUser.role) && (
+            <GodAdminPanels
+              requests={data.requests}
+              todayIso={todayIso}
+              blackouts={data.blackouts}
+              outToday={data.outToday}
+              teamMembersByTeam={data.teamMembersByTeam}
+              outTodayByTeam={data.outTodayByTeam}
+            />
+          )}
 
           <Panel
             title="Upcoming time off"
@@ -109,7 +199,7 @@ export default function Dashboard() {
                   <li key={r.id} className="flex items-start gap-3 text-sm">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: ptoTypeById(r.type)?.color }} />
                     <p className="flex-1 text-ink-soft">
-                      {activityText(r, ctx)}
+                      {activityText(r, data.users)}
                       <span className="ml-1.5 text-[11px] text-ink-mute">{relativeTime(r.decidedAt || r.submittedAt)}</span>
                     </p>
                   </li>
@@ -149,16 +239,13 @@ export default function Dashboard() {
 }
 
 /* ---- Admin panels ---- */
-function AdminPanels({ ctx }) {
-  const { activeUser, pendingForApprover, teamMembers, todayIso, requests, balanceFor } = ctx;
-  const team = activeUser.role === 'admin' ? activeUser.team : null;
-  const members = teamMembers(team).filter((u) => u.role === 'employee' || u.id !== activeUser.id);
-  const pending = pendingForApprover(activeUser);
+function AdminPanels({ activeUser, todayIso, requests, pending, members, balancesByMember }) {
+  const visibleMembers = members.filter((u) => u.role === 'employee' || u.id !== activeUser.id);
   const oldest = pending.reduce((acc, r) => (!acc || r.submittedAt < acc.submittedAt ? r : acc), null);
 
   const wkStart = toISO(startOfWeek(toDate(todayIso)));
   const wkEnd = toISO(endOfWeek(toDate(todayIso)));
-  const outThisWeek = members.filter((m) =>
+  const outThisWeek = visibleMembers.filter((m) =>
     requests.some((r) => r.userId === m.id && r.status === 'approved' && rangesOverlap(r.start, r.end, wkStart, wkEnd))
   );
 
@@ -167,7 +254,7 @@ function AdminPanels({ ctx }) {
       <div className="rounded-card border border-line bg-card p-5 shadow-card">
         <p className="eyebrow">Team this week</p>
         <p className="mt-2.5 text-[26px] font-bold leading-none tabular text-ink">
-          {outThisWeek.length}<span className="ml-1.5 text-sm font-medium text-ink-mute">of {members.length} out</span>
+          {outThisWeek.length}<span className="ml-1.5 text-sm font-medium text-ink-mute">of {visibleMembers.length} out</span>
         </p>
         <div className="mt-3.5 flex min-h-[2rem] items-center">
           {outThisWeek.length === 0 ? (
@@ -210,7 +297,7 @@ function AdminPanels({ ctx }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-line-soft">
-              {members.map((m) => (
+              {visibleMembers.map((m) => (
                 <tr key={m.id} className="transition-colors hover:bg-panel/60">
                   <td className="py-2.5">
                     <span className="flex items-center gap-2.5">
@@ -218,8 +305,8 @@ function AdminPanels({ ctx }) {
                       <span className="font-medium text-ink">{m.name}</span>
                     </span>
                   </td>
-                  <td className="py-2.5 text-right tabular font-semibold text-ink-soft">{balanceFor(m.id, 'vacation')}</td>
-                  <td className="py-2.5 text-right tabular font-semibold text-ink-soft">{balanceFor(m.id, 'sick')}</td>
+                  <td className="py-2.5 text-right tabular font-semibold text-ink-soft">{balancesByMember[m.id]?.vacation}</td>
+                  <td className="py-2.5 text-right tabular font-semibold text-ink-soft">{balancesByMember[m.id]?.sick}</td>
                 </tr>
               ))}
             </tbody>
@@ -231,10 +318,8 @@ function AdminPanels({ ctx }) {
 }
 
 /* ---- God admin panels ---- */
-function GodAdminPanels({ ctx }) {
-  const { requests, outOnDay, todayIso, blackouts, teamMembers } = ctx;
+function GodAdminPanels({ requests, todayIso, blackouts, outToday, teamMembersByTeam, outTodayByTeam }) {
   const totalPending = requests.filter((r) => r.status === 'pending').length;
-  const outToday = outOnDay(todayIso);
   const upcomingBlackouts = blackouts.filter((b) => toDate(b.end) >= toDate(todayIso));
 
   const oldestPending = requests
@@ -307,8 +392,8 @@ function GodAdminPanels({ ctx }) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         {TEAMS.map((t) => {
-          const members = teamMembers(t.id);
-          const out = outOnDay(todayIso, t.id);
+          const members = teamMembersByTeam[t.id] ?? [];
+          const out = outTodayByTeam[t.id] ?? [];
           return (
             <div key={t.id} className="rounded-card border border-line bg-card p-5 shadow-card">
               <div className="flex items-center justify-between">
@@ -356,11 +441,11 @@ function Panel({ title, icon: Icon, action, compact, children }) {
   );
 }
 
-function activityText(r, ctx) {
+function activityText(r, users) {
   const type = ptoTypeById(r.type)?.name;
   const range = `${fmtShort(r.start)}${r.start !== r.end ? `–${fmtShort(r.end)}` : ''}`;
   if (r.status === 'approved') {
-    const decider = ctx.users.find((u) => u.id === r.decidedBy);
+    const decider = users.find((u) => u.id === r.decidedBy);
     const by = decider && decider.id !== r.userId ? <> by {firstName(decider.name)}</> : null;
     return <>Your {type} request for {range} was approved{by}.</>;
   }

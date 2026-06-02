@@ -2,10 +2,11 @@
 //   phone-mid-shift case. Page content fades in on route change (keyed by pathname) and is
 //   width-capped for readable line lengths. Mobile nav surfaces the approvals badge.
 // References: standard product app shell (Linear/Vercel); phone-first PTO tools (Timetastic).
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Calendar, Mail, CheckSquare, Users, BarChart3, Settings, User, LayoutDashboard } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useCurrentUser } from '../../data/session';
+import { useDataSource } from '../../data/dataSource';
 import { canApprove, isGodAdmin } from '../../utils/constants';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
@@ -25,14 +26,27 @@ const TITLES = {
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const { pathname } = useLocation();
-  const { activeUser, pendingForApprover } = useDemoContext();
+  const activeUser = useCurrentUser();
+  const { pendingForApprover } = useDataSource();
+  const [approvalsCount, setApprovalsCount] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    if (canApprove(activeUser?.role)) {
+      pendingForApprover().then((rows) => { if (alive) setApprovalsCount(rows.length); });
+    } else {
+      setApprovalsCount(0);
+    }
+    return () => { alive = false; };
+  }, [activeUser?.role, pathname]);
+
   const meta = TITLES[pathname] || { title: 'Chartwells PTO' };
 
   const bottomNav = [
     { to: '/', label: 'Home', icon: LayoutDashboard },
     { to: '/calendar', label: 'Calendar', icon: Calendar },
     { to: '/requests', label: 'Requests', icon: Mail },
-    canApprove(activeUser?.role) && { to: '/approvals', label: 'Approvals', icon: CheckSquare, badge: pendingForApprover(activeUser).length },
+    canApprove(activeUser?.role) && { to: '/approvals', label: 'Approvals', icon: CheckSquare, badge: approvalsCount },
     canApprove(activeUser?.role) && { to: '/team', label: 'Team', icon: Users },
     isGodAdmin(activeUser?.role) && { to: '/reports', label: 'Reports', icon: BarChart3 },
     isGodAdmin(activeUser?.role) && { to: '/settings', label: 'Settings', icon: Settings },

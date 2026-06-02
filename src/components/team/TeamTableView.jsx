@@ -2,9 +2,9 @@
 //   column for managers who want to scan and compare numbers. Numeric columns are right-
 //   aligned mono; clicking a header sorts, clicking a row opens the profile.
 // References: Linear/Height data tables; tabular-figure alignment.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useDataSource } from '../../data/dataSource';
 import { DEFAULT_BALANCES, ROLES, teamById } from '../../utils/constants';
 import { businessDays } from '../../utils/dateHelpers';
 import Avatar from '../ui/Avatar';
@@ -21,24 +21,53 @@ const COLS = [
 ];
 
 export default function TeamTableView({ members, onSelect }) {
-  const { balanceFor, requestsForUser } = useDemoContext();
+  const { balanceFor, requestsForUser } = useDataSource();
   const [sort, setSort] = useState({ key: 'name', dir: 1 });
+  const [data, setData] = useState(null);
 
-  const ytd = (id) =>
-    requestsForUser(id)
-      .filter((r) => r.status === 'approved')
-      .reduce((s, r) => s + businessDays(r.start, r.end), 0);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    Promise.all(
+      members.map((m) =>
+        Promise.all([
+          balanceFor(m.id, 'vacation'),
+          balanceFor(m.id, 'sick'),
+          balanceFor(m.id, 'wellness'),
+          balanceFor(m.id, 'floating'),
+          requestsForUser(m.id),
+        ]).then(([vacation, sick, wellness, floating, requests]) => ({
+          id: m.id,
+          vacation,
+          sick,
+          wellness,
+          floating,
+          ytd: requests
+            .filter((r) => r.status === 'approved')
+            .reduce((s, r) => s + businessDays(r.start, r.end), 0),
+        }))
+      )
+    ).then((rows) => {
+      if (!alive) return;
+      const byMember = {};
+      rows.forEach((r) => { byMember[r.id] = r; });
+      setData(byMember);
+    });
+    return () => { alive = false; };
+  }, [members]);
+
+  if (data === null) return null;
 
   const rows = members.map((m) => ({
     member: m,
     name: m.name,
     role: ROLES[m.role]?.label,
     team: teamById(m.team)?.name || '—',
-    vacation: balanceFor(m.id, 'vacation'),
-    sick: balanceFor(m.id, 'sick'),
-    wellness: balanceFor(m.id, 'wellness'),
-    floating: balanceFor(m.id, 'floating'),
-    ytd: ytd(m.id),
+    vacation: data[m.id].vacation,
+    sick: data[m.id].sick,
+    wellness: data[m.id].wellness,
+    floating: data[m.id].floating,
+    ytd: data[m.id].ytd,
   }));
 
   rows.sort((a, b) => {

@@ -2,7 +2,9 @@
 //   and history, in the same order as the self Profile so there's nothing new to learn.
 //   memberStatus (below) is shared with the team cards.
 import { useNavigate } from 'react-router-dom';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useEffect, useState } from 'react';
+import { useDataSource } from '../../data/dataSource';
+import { useToday } from '../../data/today';
 import { PTO_TYPES, DEFAULT_BALANCES, teamById, ptoTypeById } from '../../utils/constants';
 import { fmtRange, businessDays } from '../../utils/dateHelpers';
 import Avatar from '../ui/Avatar';
@@ -15,8 +17,7 @@ import { CalendarX } from 'lucide-react';
 // Design notes: One "where are they right now" line, color + dot, never colour alone.
 //   Text uses the -ink tones so the label clears AA on light; the dot keeps the vivid
 //   base (or the PTO type's own colour) so it still pops at a glance.
-export function memberStatus(member, ctx) {
-  const { todayIso, requests, holidays } = ctx;
+export function memberStatus(member, requests, holidays, todayIso) {
   const onPto = requests.find(
     (r) => r.userId === member.id && r.status === 'approved' && r.start <= todayIso && r.end >= todayIso
   );
@@ -30,12 +31,34 @@ export function memberStatus(member, ctx) {
 }
 
 export default function EmployeeProfile({ member }) {
-  const ctx = useDemoContext();
   const navigate = useNavigate();
-  const { requestsForUser, usedFor } = ctx;
+  const { requestsForUser, usedFor, getRequests, getHolidays } = useDataSource();
+  const todayIso = useToday();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    Promise.all([
+      requestsForUser(member.id),
+      getRequests(),
+      getHolidays(),
+      Promise.all(PTO_TYPES.map((t) => usedFor(member.id, t.id))),
+    ]).then(([history, requests, holidays, usedList]) => {
+      if (!alive) return;
+      const usedByType = {};
+      PTO_TYPES.forEach((t, i) => { usedByType[t.id] = usedList[i]; });
+      setData({ history, requests, holidays, usedByType });
+    });
+    return () => { alive = false; };
+  }, [member.id]);
+
+  if (data === null) return null;
+
+  const { requests, holidays, usedByType } = data;
   // Newest on the left, oldest on the right (scroll right to go back in time).
-  const history = [...requestsForUser(member.id)].sort((a, b) => (a.start < b.start ? 1 : -1));
-  const status = memberStatus(member, ctx);
+  const history = [...data.history].sort((a, b) => (a.start < b.start ? 1 : -1));
+  const status = memberStatus(member, requests, holidays, todayIso);
 
   return (
     <div className="space-y-5">
@@ -60,7 +83,7 @@ export default function EmployeeProfile({ member }) {
       <div className="space-y-2.5">
         {PTO_TYPES.map((t) => {
           const total = DEFAULT_BALANCES[t.id];
-          const used = usedFor(member.id, t.id);
+          const used = usedByType[t.id];
           return (
             <div key={t.id}>
               <div className="mb-1 flex items-center justify-between text-xs">

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, X, Users, CalendarSearch, History } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useDataSource } from '../../data/dataSource';
+import { useCurrentUser } from '../../data/session';
 import { userById, teamById, ptoTypeById, DEFAULT_BALANCES, firstName } from '../../utils/constants';
 import { fmtRange, businessDays, relativeTime, fmtTime } from '../../utils/dateHelpers';
 import { conflictsFor } from '../../utils/policyEngine';
@@ -19,23 +20,44 @@ import { useToast } from '../ui/Toast';
 //   they're allowed to act, and "See in calendar" which deep-links the calendar to this
 //   request's dates with its range marked. Behind it, the backdrop blurs (Modal default).
 // References: Linear issue peek; the feedback's "pop-up widget, blur behind, see in calendar".
-export default function RequestDetailModal({ requestId, open, onClose, onOpenPerson }) {
-  const { requests, activeUser, users, balanceFor, approveRequest, denyRequest } = useDemoContext();
+export default function RequestDetailModal({ requestId, open, onClose, onOpenPerson, onChanged }) {
+  const activeUser = useCurrentUser();
+  const { getRequests, getUsers, balanceFor, approveRequest, denyRequest } = useDataSource();
   const toast = useToast();
   const navigate = useNavigate();
+  const [data, setData] = useState(null);
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState('');
 
   // Reset the inline deny flow whenever the modal opens on a different request.
   useEffect(() => { setDenying(false); setReason(''); }, [requestId, open]);
 
-  const req = requests.find((r) => r.id === requestId);
-  if (!req) return null;
+  useEffect(() => {
+    let alive = true;
+    if (!open || !requestId) {
+      setData(null);
+      return () => { alive = false; };
+    }
+    setData(null);
+    Promise.all([getRequests(), getUsers()]).then(([requests, users]) => {
+      const req = requests.find((r) => r.id === requestId);
+      if (!req) {
+        if (alive) setData({ requests, users, req: null, balance: null });
+        return;
+      }
+      balanceFor(req.userId, req.type).then((balance) => {
+        if (alive) setData({ requests, users, req, balance });
+      });
+    });
+    return () => { alive = false; };
+  }, [requestId, open]);
 
+  if (!data || !data.req) return null;
+
+  const { requests, users, req, balance } = data;
   const employee = userById(req.userId);
   const type = ptoTypeById(req.type);
   const days = businessDays(req.start, req.end);
-  const balance = balanceFor(req.userId, req.type);
   const decider = userById(req.decidedBy);
   const conflicts = conflictsFor({
     draft: { start: req.start, end: req.end },
@@ -51,15 +73,19 @@ export default function RequestDetailModal({ requestId, open, onClose, onOpenPer
 
   const seeInCalendar = () => { onClose?.(); navigate(`/calendar?req=${req.id}`); };
   const approve = () => {
-    approveRequest(req.id, activeUser.id);
-    toast(`Approved ${firstName(employee?.name)}'s request.`, { kind: 'success' });
-    onClose?.();
+    approveRequest(req.id).then(() => {
+      toast(`Approved ${firstName(employee?.name)}'s request.`, { kind: 'success' });
+      onChanged?.();
+      onClose?.();
+    });
   };
   const confirmDeny = () => {
     if (!reason.trim()) return;
-    denyRequest(req.id, activeUser.id, reason.trim());
-    toast(`Denied ${firstName(employee?.name)}'s request.`, { kind: 'info' });
-    onClose?.();
+    denyRequest(req.id, reason.trim()).then(() => {
+      toast(`Denied ${firstName(employee?.name)}'s request.`, { kind: 'info' });
+      onChanged?.();
+      onClose?.();
+    });
   };
 
   return (

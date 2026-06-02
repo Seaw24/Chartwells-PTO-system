@@ -4,7 +4,7 @@
 //   identity badge get on-navy treatments so the bright workspace below carries the colour.
 // References: Notion/Linear top bars; persistent primary-action placement; warm-on-cool CTA.
 import { Plus } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useCurrentUser } from '../../data/session';
 import { useRequestModal } from '../requests/RequestModalProvider';
 import { firstName } from '../../utils/constants';
 import Avatar from '../ui/Avatar';
@@ -13,7 +13,7 @@ import Button from '../ui/Button';
 import NotificationBell from './NotificationBell';
 
 export default function TopBar({ title, subtitle }) {
-  const { activeUser } = useDemoContext();
+  const activeUser = useCurrentUser();
   const { openRequest } = useRequestModal();
 
   return (

@@ -15,7 +15,9 @@ import {
   SlidersHorizontal,
   SkipForward,
 } from 'lucide-react';
-import { useDemoContext } from '../hooks/useDemoContext';
+import { useDataSource } from '../data/dataSource';
+import { useCurrentUser } from '../data/session';
+import { useToday } from '../data/today';
 import { useRequestModal } from '../components/requests/RequestModalProvider';
 import { canApprove, PTO_TYPES, userById, firstName, TEAMS } from '../utils/constants';
 import { toDate, toISO, fmtMonthYear, fmtRange } from '../utils/dateHelpers';
@@ -37,10 +39,13 @@ const STATUSES = [
 ];
 
 export default function CalendarPage() {
-  const { activeUser, todayIso, requests, holidays, teamMembers, users } = useDemoContext();
+  const activeUser = useCurrentUser();
+  const todayIso = useToday();
+  const { getRequests, getHolidays, getUsers } = useDataSource();
   const { openRequest } = useRequestModal();
   const isApprover = canApprove(activeUser.role);
 
+  const [data, setData] = useState(null);
   const [view, setView] = useState('month');
   const [cursor, setCursor] = useState(toDate(todayIso));
   const [typeFilter, setTypeFilter] = useState(new Set(PTO_TYPES.map((t) => t.id)));
@@ -52,6 +57,18 @@ export default function CalendarPage() {
   const [detailList, setDetailList] = useState(null);
   const [highlightId, setHighlightId] = useState(null);
   const [params, setParams] = useSearchParams();
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([getRequests(), getHolidays(), getUsers()]).then(([requests, holidays, users]) => {
+      if (alive) setData({ requests, holidays, users });
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const requests = data?.requests ?? [];
+  const holidays = data?.holidays ?? [];
+  const users = data?.users ?? [];
 
   // Deep-link from "See in calendar": jump to the request's month and mark it. We clear
   // the URL param after applying so a refresh doesn't re-trigger, but keep the highlight
@@ -111,8 +128,8 @@ export default function CalendarPage() {
 
   const timelineMembers = useMemo(() => {
     if (focusPerson) return [focusPerson];
-    return teamMembers(teamFilter === 'all' ? null : teamFilter);
-  }, [teamMembers, teamFilter, focusPerson]);
+    return teamFilter === 'all' ? users : users.filter((u) => u.team === teamFilter);
+  }, [teamFilter, focusPerson, users]);
 
   const viewOptions = [
     { value: 'month', label: 'Month', icon: CalendarDays },
@@ -153,6 +170,8 @@ export default function CalendarPage() {
     if (list) setDetailList(list);
     else setDetail(req);
   }
+
+  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
 
   return (
     <div className="space-y-4">

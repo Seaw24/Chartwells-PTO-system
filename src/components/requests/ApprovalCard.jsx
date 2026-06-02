@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, X, Users, History } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useDataSource } from '../../data/dataSource';
+import { useToday } from '../../data/today';
 import { userById, firstName, teamById, ptoTypeById, DEFAULT_BALANCES } from '../../utils/constants';
 import { fmtRange, businessDays, relativeTime, toDate } from '../../utils/dateHelpers';
 import { conflictsFor } from '../../utils/policyEngine';
@@ -15,14 +16,29 @@ import Button from '../ui/Button';
 //   an inline reason (required) with Ctrl/Cmd+Enter to confirm for fast triage.
 // References: HR approval queues (Charlie/BambooHR); "managers are low on time".
 export default function ApprovalCard({ request, onApprove, onDeny, selectable, selected, onToggleSelect, onOpenPerson, onOpenDetail }) {
-  const { balanceFor, requests, users, todayIso } = useDemoContext();
+  const { balanceFor, getRequests, getUsers } = useDataSource();
+  const todayIso = useToday();
+  const [data, setData] = useState(null);
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      balanceFor(request.userId, request.type),
+      getRequests(),
+      getUsers(),
+    ]).then(([balance, requests, users]) => {
+      if (alive) setData({ balance, requests, users });
+    });
+    return () => { alive = false; };
+  }, [request.id]);
 
   const employee = userById(request.userId);
   const type = ptoTypeById(request.type);
   const days = businessDays(request.start, request.end);
-  const balance = balanceFor(request.userId, request.type);
+  if (data === null) return null;
+  const { balance, requests, users } = data;
   const conflicts = conflictsFor({
     draft: { start: request.start, end: request.end },
     requests,

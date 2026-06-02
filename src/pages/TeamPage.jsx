@@ -2,9 +2,10 @@
 //   (numbers-first compare) via the segmented control. God-admin filters by team;
 //   admins see only their own. Selecting anyone opens their profile in a modal.
 // References: Float people/schedule toggle; Timetastic department filter.
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LayoutGrid, Table2 } from 'lucide-react';
-import { useDemoContext } from '../hooks/useDemoContext';
+import { useDataSource } from '../data/dataSource';
+import { useCurrentUser } from '../data/session';
 import { isGodAdmin, TEAMS } from '../utils/constants';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import Modal from '../components/ui/Modal';
@@ -13,16 +14,25 @@ import TeamTableView from '../components/team/TeamTableView';
 import EmployeeProfile from '../components/team/EmployeeProfile';
 
 export default function TeamPage() {
-  const { activeUser, teamMembers } = useDemoContext();
+  const activeUser = useCurrentUser();
+  const { teamMembers } = useDataSource();
   const god = isGodAdmin(activeUser.role);
   const [view, setView] = useState('cards');
   const [teamFilter, setTeamFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [members, setMembers] = useState(null);
 
-  const members = useMemo(() => {
-    if (god) return teamMembers(teamFilter === 'all' ? null : teamFilter);
-    return teamMembers(activeUser.team);
-  }, [god, teamFilter, activeUser, teamMembers]);
+  useEffect(() => {
+    let alive = true;
+    setMembers(null);
+    const teamId = god ? (teamFilter === 'all' ? null : teamFilter) : activeUser.team;
+    teamMembers(teamId).then((rows) => {
+      if (alive) setMembers(rows);
+    });
+    return () => { alive = false; };
+  }, [activeUser.team, god, teamFilter]);
+
+  if (members === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
 
   return (
     <div className="space-y-5">

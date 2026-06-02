@@ -7,7 +7,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { differenceInHours } from 'date-fns';
 import { Inbox, RotateCcw, CheckCheck, Search, ArrowDownUp, SearchX } from 'lucide-react';
-import { useDemoContext } from '../hooks/useDemoContext';
+import { useDataSource } from '../data/dataSource';
+import { useCurrentUser } from '../data/session';
+import { useToday } from '../data/today';
 import { useToast } from '../components/ui/Toast';
 import { isGodAdmin, userById, firstName, ptoTypeById, teamById, TEAMS } from '../utils/constants';
 import { fmtRange, relativeTime, toDate, fmtTime, businessDays } from '../utils/dateHelpers';
@@ -20,10 +22,13 @@ import Avatar from '../components/ui/Avatar';
 import Button from '../components/ui/Button';
 
 export default function Approvals() {
-  const { activeUser, todayIso, pendingForApprover, recentDecisionsBy, approveRequest, denyRequest, approveMany, undoDecision } = useDemoContext();
+  const activeUser = useCurrentUser();
+  const todayIso = useToday();
+  const { pendingForApprover, recentDecisionsBy, approveRequest, denyRequest, approveMany, undoDecision } = useDataSource();
   const toast = useToast();
   const god = isGodAdmin(activeUser.role);
 
+  const [data, setData] = useState(null);
   const [tab, setTab] = useState('pending');
   const [teamFilter, setTeamFilter] = useState('all');
   const [selected, setSelected] = useState(new Set());
@@ -31,7 +36,16 @@ export default function Approvals() {
   const [sort, setSort] = useState('oldest');
   const [personId, setPersonId] = useState(null);
   const [detailId, setDetailId] = useState(null);
+  const [refresh, setRefresh] = useState(0);
   const [params, setParams] = useSearchParams();
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([pendingForApprover(), recentDecisionsBy()]).then(([pendingAll, decisions]) => {
+      if (alive) setData({ pendingAll, decisions });
+    });
+    return () => { alive = false; };
+  }, [refresh]);
 
   // Deep-link from elsewhere (e.g. a person's history on the Team page): open that
   // request's detail widget, then clear the param so a refresh doesn't reopen it.
@@ -42,7 +56,7 @@ export default function Approvals() {
     setParams({}, { replace: true });
   }, [params, setParams]);
 
-  const pendingAll = pendingForApprover(activeUser);
+  const pendingAll = data?.pendingAll ?? [];
   const teamScoped = useMemo(
     () => (god && teamFilter !== 'all' ? pendingAll.filter((r) => userById(r.userId)?.team === teamFilter) : pendingAll),
     [pendingAll, god, teamFilter]
@@ -65,7 +79,7 @@ export default function Approvals() {
     );
   }, [teamScoped, query, sort]);
 
-  const decisions = recentDecisionsBy(activeUser);
+  const decisions = data?.decisions ?? [];
 
   const toggleSel = (id) => {
     const next = new Set(selected);
@@ -75,18 +89,30 @@ export default function Approvals() {
   };
 
   const handleApprove = (r) => {
-    approveRequest(r.id, activeUser.id);
-    toast(`Approved ${firstName(userById(r.userId)?.name)}'s request.`, { kind: 'success' });
+    approveRequest(r.id).then(() => {
+      setRefresh((x) => x + 1);
+      toast(`Approved ${firstName(userById(r.userId)?.name)}'s request.`, { kind: 'success' });
+    });
   };
   const handleDeny = (r, reason) => {
-    denyRequest(r.id, activeUser.id, reason);
-    toast(`Denied ${firstName(userById(r.userId)?.name)}'s request.`, { kind: 'info' });
+    denyRequest(r.id, reason).then(() => {
+      setRefresh((x) => x + 1);
+      toast(`Denied ${firstName(userById(r.userId)?.name)}'s request.`, { kind: 'info' });
+    });
   };
   const bulkApprove = () => {
-    approveMany([...selected], activeUser.id);
-    toast(`Approved ${selected.size} request${selected.size === 1 ? '' : 's'}.`, { kind: 'success' });
-    setSelected(new Set());
+    const count = selected.size;
+    approveMany([...selected]).then((result) => {
+      setRefresh((x) => x + 1);
+      toast(`Approved ${count} request${count === 1 ? '' : 's'}.`, { kind: 'success' });
+      if (result.failed.length) {
+        toast(`${result.failed.length} request${result.failed.length === 1 ? '' : 's'} skipped.`, { kind: 'info' });
+      }
+      setSelected(new Set());
+    });
   };
+
+  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
 
   return (
     <div className="space-y-5">
@@ -211,8 +237,10 @@ export default function Approvals() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      undoDecision(r.id);
-                      toast('Approval reverted to pending.', { kind: 'info' });
+                      undoDecision(r.id).then(() => {
+                        setRefresh((x) => x + 1);
+                        toast('Approval reverted to pending.', { kind: 'info' });
+                      });
                     }}
                   >
                     <RotateCcw size={13} /> Undo
@@ -235,6 +263,7 @@ export default function Approvals() {
         open={!!detailId}
         onClose={() => setDetailId(null)}
         onOpenPerson={(id) => { setDetailId(null); setPersonId(id); }}
+        onChanged={() => setRefresh((x) => x + 1)}
       />
     </div>
   );

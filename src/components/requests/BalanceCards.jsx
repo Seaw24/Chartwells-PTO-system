@@ -1,21 +1,43 @@
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useEffect, useState } from 'react';
 import { PTO_TYPES, DEFAULT_BALANCES } from '../../utils/constants';
 import PtoTypeIcon from '../ui/PtoTypeIcon';
 import { fmtShort } from '../../utils/dateHelpers';
+import { useDataSource } from '../../data/dataSource';
 
 // Design notes: The dashboard's signature row. Each card carries its PTO type's colour as a real
-//   identity (tinted icon chip + usage bar), leads with the number that matters — days REMAINING,
-//   big and tabular — and shows what's used as a slim bar + caption. Varying fill levels and hues
+//   identity (tinted icon chip + usage bar), leads with the number that matters, days REMAINING,
+//   big and tabular, and shows what's used as a slim bar + caption. Varying fill levels and hues
 //   give the row visual rhythm so five cards never read as an identical metric grid. No empty rings.
 export default function BalanceCards({ userId }) {
-  const { usedFor, requestsForUser } = useDemoContext();
-  const requests = requestsForUser(userId);
+  const { usedFor, requestsForUser } = useDataSource();
+  const [data, setData] = useState(null); // { requests, usedByType } or null while loading
+
+  useEffect(() => {
+    let alive = true;
+    // Two reads in parallel: the user's requests (for the floating caption) and the days
+    // used per PTO type. usedFor is one call per type, so batch them with Promise.all.
+    Promise.all([
+      requestsForUser(userId),
+      Promise.all(PTO_TYPES.map((t) => usedFor(userId, t.id))),
+    ]).then(([requests, usedList]) => {
+      if (!alive) return;
+      const usedByType = {};
+      PTO_TYPES.forEach((t, i) => { usedByType[t.id] = usedList[i]; });
+      setData({ requests, usedByType });
+    });
+    return () => { alive = false; };
+  }, [userId]);
+
+  // Leaf component rendered inside pages: while loading, render nothing. The mock resolves
+  // instantly; over Supabase this is a brief blank row, not a full-screen spinner.
+  if (data === null) return null;
+  const { requests, usedByType } = data;
 
   return (
     <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0 lg:grid-cols-5">
       {PTO_TYPES.map((t) => {
         const total = DEFAULT_BALANCES[t.id];
-        const used = usedFor(userId, t.id);
+        const used = usedByType[t.id];
         const remaining = total - used;
         const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
 

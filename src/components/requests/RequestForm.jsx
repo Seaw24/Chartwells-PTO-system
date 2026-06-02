@@ -4,9 +4,11 @@
 //   it's functional: it shows the cost of the request as you build it). Conflicts and
 //   blackout windows inform, they don't block — matches the product's "never surprise".
 // References: Charlie HR / Gusto request flows; the brief's live-balance-ring note.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Users, CalendarCheck } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useDataSource } from '../../data/dataSource';
+import { useCurrentUser } from '../../data/session';
+import { useToday } from '../../data/today';
 import { useToast } from '../ui/Toast';
 import Button from '../ui/Button';
 import DateRangePicker from '../ui/DateRangePicker';
@@ -19,16 +21,10 @@ import { validateRequest, conflictsFor, describeWindows } from '../../utils/poli
 import { ptoTypeById } from '../../utils/constants';
 
 export default function RequestForm({ prefill = {}, onSubmitted, onCancel }) {
-  const {
-    activeUser,
-    activeUserId,
-    todayIso,
-    requests,
-    requestsForUser,
-    balanceFor,
-    submitRequest,
-    users,
-  } = useDemoContext();
+  const activeUser = useCurrentUser();
+  const activeUserId = activeUser.id;
+  const todayIso = useToday();
+  const { getRequests, requestsForUser, balanceFor, submitRequest, getUsers } = useDataSource();
   const toast = useToast();
 
   const [type, setType] = useState(prefill.type || '');
@@ -37,9 +33,26 @@ export default function RequestForm({ prefill = {}, onSubmitted, onCancel }) {
     end: prefill.end || prefill.start || '',
   });
   const [note, setNote] = useState('');
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      getRequests(),
+      getUsers(),
+      requestsForUser(activeUserId),
+      type ? balanceFor(activeUserId, type) : Promise.resolve(null),
+    ]).then(([requests, users, existingRequests, balance]) => {
+      if (alive) setData({ requests, users, existingRequests, balance });
+    });
+    return () => { alive = false; };
+  }, [activeUserId, type]);
 
   const ptoType = ptoTypeById(type);
-  const balance = type ? balanceFor(activeUserId, type) : null;
+  const requests = data?.requests ?? [];
+  const users = data?.users ?? [];
+  const existingRequests = data?.existingRequests ?? [];
+  const balance = type ? data?.balance ?? null : null;
   const draft = { type, start: range.start, end: range.end, note };
 
   const validation = useMemo(
@@ -48,9 +61,9 @@ export default function RequestForm({ prefill = {}, onSubmitted, onCancel }) {
         draft,
         todayIso,
         balance,
-        existingRequests: requestsForUser(activeUserId),
+        existingRequests,
       }),
-    [type, range.start, range.end, balance, todayIso] // eslint-disable-line react-hooks/exhaustive-deps
+    [type, range.start, range.end, balance, todayIso, existingRequests] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const conflicts = useMemo(
@@ -62,18 +75,21 @@ export default function RequestForm({ prefill = {}, onSubmitted, onCancel }) {
         selfId: activeUserId,
         teamId: activeUser?.team ?? null,
       }),
-    [range.start, range.end, requests] // eslint-disable-line react-hooks/exhaustive-deps
+    [range.start, range.end, requests, users, activeUserId, activeUser?.team] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const days = range.start && range.end ? businessDays(range.start, range.end) : 0;
   const canSubmit = type && range.start && range.end && validation.ok;
 
+  if (data === null) return null;
+
   function handleSubmit(e) {
     e.preventDefault();
     if (!canSubmit) return;
-    submitRequest(draft);
-    toast(`Request submitted for ${fmtRange(range.start, range.end)}.`, { kind: 'success' });
-    onSubmitted?.();
+    submitRequest(draft).then(() => {
+      toast(`Request submitted for ${fmtRange(range.start, range.end)}.`, { kind: 'success' });
+      onSubmitted?.();
+    });
   }
 
   return (

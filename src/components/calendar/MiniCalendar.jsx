@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isSameMonth, isSameDay, format } from 'date-fns';
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useDataSource } from '../../data/dataSource';
+import { useToday } from '../../data/today';
 import { monthGrid, toDate, toISO, WEEKDAYS, rangesOverlap, fmtMonthYear } from '../../utils/dateHelpers';
 import { ptoTypeById } from '../../utils/constants';
 
@@ -9,11 +10,28 @@ import { ptoTypeById } from '../../utils/constants';
 //   under each date, today as a filled accent-strong disc (white-on-accent AA). Whole
 //   grid is a shortcut into the full calendar.
 export default function MiniCalendar({ userId }) {
-  const { todayIso, requestsForUser, holidays } = useDemoContext();
+  const todayIso = useToday();
+  const { requestsForUser, getHolidays } = useDataSource();
   const navigate = useNavigate();
+  const [data, setData] = useState(null);
   const cursor = toDate(todayIso);
   const days = useMemo(() => monthGrid(cursor), [todayIso]); // eslint-disable-line react-hooks/exhaustive-deps
-  const requests = requestsForUser(userId).filter((r) => ['approved', 'pending'].includes(r.status));
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([requestsForUser(userId), getHolidays()]).then(([requestRows, holidays]) => {
+      if (!alive) return;
+      setData({
+        requests: requestRows.filter((r) => ['approved', 'pending'].includes(r.status)),
+        holidays,
+      });
+    });
+    return () => { alive = false; };
+  }, [userId, todayIso]);
+
+  if (data === null) return null;
+
+  const { requests, holidays } = data;
 
   function dotsFor(iso) {
     return requests

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Calendar,
@@ -12,10 +13,11 @@ import {
   PanelLeftOpen,
   CalendarDays,
 } from 'lucide-react';
-import { useDemoContext } from '../../hooks/useDemoContext';
 import { canApprove, isGodAdmin } from '../../utils/constants';
 import Avatar from '../ui/Avatar';
 import RolePill from '../ui/RolePill';
+import { useDataSource } from '../../data/dataSource';
+import { useCurrentUser } from '../../data/session';
 
 // Design notes: Deep navy rail — the branded spine that anchors the whole product and makes the
 //   light workspace read as intentional, not bare. The warm accent appears only where it earns
@@ -24,16 +26,36 @@ import RolePill from '../ui/RolePill';
 //   navy-fg-mute so the active row is unmistakable. Selection is never colour alone (rail + fill + weight).
 // References: Linear / Vercel dark rails; warm-on-cool restraint.
 export default function Sidebar({ collapsed, onToggle }) {
-  const { activeUser, requestsForUser, pendingForApprover } = useDemoContext();
+  const activeUser = useCurrentUser();
+  const { requestsForUser, pendingForApprover } = useDataSource();
   const navigate = useNavigate();
+  const [myRequests, setMyRequests] = useState(null);
+  const [approvals, setApprovals] = useState(null);
 
-  const myPending = requestsForUser(activeUser?.id).filter((r) => r.status === 'pending').length;
-  const approvalsPending = pendingForApprover(activeUser).length;
+  useEffect(() => {
+    let alive = true;
+
+    Promise.all([
+      activeUser?.id ? requestsForUser(activeUser.id) : Promise.resolve([]),
+      canApprove(activeUser?.role) ? pendingForApprover() : Promise.resolve([]),
+    ]).then(([requestRows, approvalRows]) => {
+      if (!alive) return;
+      setMyRequests(requestRows);
+      setApprovals(approvalRows);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [activeUser?.id, activeUser?.role]);
+
+  const myPending = (myRequests ?? []).filter((r) => r.status === 'pending').length;
+  const approvalsPending = (approvals ?? []).length;
 
   const items = [
     { to: '/calendar', label: 'Calendar', icon: Calendar },
     { to: '/requests', label: 'My Requests', icon: Mail, badge: myPending },
-    canApprove(activeUser?.role) && { to: '/approvals', label: 'Approvals', icon: CheckSquare, badge: approvalsPending, accent: true },
+    canApprove(activeUser?.role) && { to: '/approvals', label: 'Approvals', icon: CheckSquare, badge: approvalsPending, showBadge: true, accent: true },
     canApprove(activeUser?.role) && { to: '/team', label: 'Team', icon: Users },
     isGodAdmin(activeUser?.role) && { to: '/reports', label: 'Reports', icon: BarChart3 },
     isGodAdmin(activeUser?.role) && { to: '/settings', label: 'Settings', icon: Settings },
@@ -87,7 +109,7 @@ export default function Sidebar({ collapsed, onToggle }) {
                   strokeWidth={isActive ? 2.25 : 2}
                 />
                 {!collapsed && <span className="flex-1">{it.label}</span>}
-                {!!it.badge && (
+                {(it.showBadge || !!it.badge) && (
                   <span
                     className={`grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-bold tabular ${
                       it.accent ? 'bg-accent text-navy' : 'bg-navy-600 text-navy-fg'

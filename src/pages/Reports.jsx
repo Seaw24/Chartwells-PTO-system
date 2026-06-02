@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format, differenceInCalendarDays, startOfWeek } from 'date-fns';
 import { Download } from 'lucide-react';
-import { useDemoContext } from '../hooks/useDemoContext';
+import { useDataSource } from '../data/dataSource';
 import {
   PTO_TYPES,
   TEAMS,
@@ -22,9 +22,32 @@ import ApprovalTurnaroundChart from '../components/reports/ApprovalTurnaroundCha
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function Reports() {
-  const { requests, usedFor } = useDemoContext();
+  const { getRequests, usedFor } = useDataSource();
+  const [data, setData] = useState(null);
   const [teamFilter, setTeamFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      getRequests(),
+      Promise.all(USERS.flatMap((u) => PTO_TYPES.map((t) => usedFor(u.id, t.id)))),
+    ]).then(([requests, usedList]) => {
+      if (!alive) return;
+      const usedByUserType = {};
+      let i = 0;
+      USERS.forEach((u) => {
+        usedByUserType[u.id] = {};
+        PTO_TYPES.forEach((t) => {
+          usedByUserType[u.id][t.id] = usedList[i++];
+        });
+      });
+      setData({ requests, usedByUserType });
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const requests = data?.requests ?? [];
 
   const filtered = useMemo(
     () =>
@@ -62,12 +85,13 @@ export default function Reports() {
 
   // Unused balance liability by type (whole company, ignores filters by design).
   const { liability, liabilityTotal } = useMemo(() => {
-    const data = PTO_TYPES.map((t) => {
-      const remaining = USERS.reduce((s, u) => s + (DEFAULT_BALANCES[t.id] - usedFor(u.id, t.id)), 0);
+    if (!data) return { liability: [], liabilityTotal: 0 };
+    const rows = PTO_TYPES.map((t) => {
+      const remaining = USERS.reduce((s, u) => s + (DEFAULT_BALANCES[t.id] - data.usedByUserType[u.id][t.id]), 0);
       return { name: t.name, value: remaining, color: t.color };
     });
-    return { liability: data, liabilityTotal: data.reduce((s, d) => s + d.value, 0) };
-  }, [usedFor]);
+    return { liability: rows, liabilityTotal: rows.reduce((s, d) => s + d.value, 0) };
+  }, [data]);
 
   // Approval turnaround by week (chronological).
   const turnaround = useMemo(() => {
@@ -107,6 +131,8 @@ export default function Reports() {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
 
   return (
     <div className="space-y-5">

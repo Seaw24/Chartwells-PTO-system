@@ -2,8 +2,8 @@
 //   strip, then balances and full history. Mirrors the team EmployeeProfile vocabulary so
 //   "me" and "a teammate" read identically. One primary action: request time off.
 // References: Deel/BambooHR profile headers; consistent component vocabulary.
+import { useEffect, useState } from 'react';
 import { Mail, Users2, ShieldCheck, CalendarPlus } from 'lucide-react';
-import { useDemoContext } from '../hooks/useDemoContext';
 import { useRequestModal } from '../components/requests/RequestModalProvider';
 import { teamById, ROLES, ptoTypeById } from '../utils/constants';
 import { fmtRange, businessDays } from '../utils/dateHelpers';
@@ -15,11 +15,24 @@ import BalanceCards from '../components/requests/BalanceCards';
 import PtoTypeIcon from '../components/ui/PtoTypeIcon';
 import EmptyState from '../components/ui/EmptyState';
 import { CalendarX } from 'lucide-react';
+import { useDataSource } from '../data/dataSource';
+import { useCurrentUser } from '../data/session';
 
 export default function Profile() {
-  const { activeUser, requestsForUser } = useDemoContext();
+  const activeUser = useCurrentUser();          // identity: sync, available immediately
+  const { requestsForUser } = useDataSource();
   const { openRequest } = useRequestModal();
-  const history = requestsForUser(activeUser.id);
+
+  const [history, setHistory] = useState(null); // data: fetched
+
+  useEffect(() => {
+    let alive = true;
+    requestsForUser(activeUser.id).then((rows) => { if (alive) setHistory(rows); });
+    return () => { alive = false; };
+  }, [activeUser.id]);
+
+  if (history === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
+
   const ytd = history.filter((r) => r.status === 'approved').reduce((s, r) => s + businessDays(r.start, r.end), 0);
 
   return (

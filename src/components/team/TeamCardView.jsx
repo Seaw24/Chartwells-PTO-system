@@ -2,20 +2,47 @@
 //   line (in office / on PTO / holiday) sits up top, then three balance bars give an
 //   instant read on who has time banked. Hover lifts the card to signal it's clickable.
 // References: Timetastic people view (balance beside the person); Float people column.
-import { useDemoContext } from '../../hooks/useDemoContext';
+import { useEffect, useState } from 'react';
+import { useDataSource } from '../../data/dataSource';
+import { useToday } from '../../data/today';
 import { PTO_TYPES, DEFAULT_BALANCES } from '../../utils/constants';
 import { memberStatus } from './EmployeeProfile';
 import Avatar from '../ui/Avatar';
 import RolePill from '../ui/RolePill';
 
 export default function TeamCardView({ members, onSelect }) {
-  const ctx = useDemoContext();
-  const { usedFor } = ctx;
+  const { usedFor, getRequests, getHolidays } = useDataSource();
+  const todayIso = useToday();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    Promise.all([
+      getRequests(),
+      getHolidays(),
+      Promise.all(members.flatMap((m) => PTO_TYPES.slice(0, 3).map((t) => usedFor(m.id, t.id)))),
+    ]).then(([requests, holidays, usedList]) => {
+      if (!alive) return;
+      const usedByMemberType = {};
+      let i = 0;
+      members.forEach((m) => {
+        usedByMemberType[m.id] = {};
+        PTO_TYPES.slice(0, 3).forEach((t) => {
+          usedByMemberType[m.id][t.id] = usedList[i++];
+        });
+      });
+      setData({ requests, holidays, usedByMemberType });
+    });
+    return () => { alive = false; };
+  }, [members]);
+
+  if (data === null) return null;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {members.map((m) => {
-        const status = memberStatus(m, ctx);
+        const status = memberStatus(m, data.requests, data.holidays, todayIso);
         return (
           <button
             key={m.id}
@@ -38,7 +65,7 @@ export default function TeamCardView({ members, onSelect }) {
             <div className="mt-3 space-y-2">
               {PTO_TYPES.slice(0, 3).map((t) => {
                 const total = DEFAULT_BALANCES[t.id];
-                const used = usedFor(m.id, t.id);
+                const used = data.usedByMemberType[m.id][t.id];
                 return (
                   <div key={t.id} className="flex items-center gap-2">
                     <span className="w-16 truncate text-[11px] text-ink-mute">{t.name}</span>
