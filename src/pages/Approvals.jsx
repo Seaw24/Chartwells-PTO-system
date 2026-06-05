@@ -11,8 +11,9 @@ import { useDataSource } from '../data/dataSource';
 import { useCurrentUser } from '../data/session';
 import { useToday } from '../data/today';
 import { useToast } from '../components/ui/Toast';
-import { isGodAdmin, userById, firstName, ptoTypeById, teamById, TEAMS } from '../utils/constants';
-import { fmtRange, relativeTime, toDate, fmtTime, businessDays } from '../utils/dateHelpers';
+import { isGodAdmin, userById, firstName, TEAMS } from '../utils/constants';
+import { relativeTime, toDate, fmtTime } from '../utils/dateHelpers';
+import { requestDays, requestRangeLabel, requestTypeLabel } from '../utils/requestHelpers';
 import ApprovalCard from '../components/requests/ApprovalCard';
 import PersonRequestsPanel from '../components/requests/PersonRequestsPanel';
 import RequestDetailModal from '../components/requests/RequestDetailModal';
@@ -68,14 +69,14 @@ export default function Approvals() {
     const q = query.trim().toLowerCase();
     const list = teamScoped.filter((r) => {
       if (!q) return true;
-      const hay = `${userById(r.userId)?.name} ${ptoTypeById(r.type)?.name}`.toLowerCase();
+      const hay = `${userById(r.userId)?.name} ${requestTypeLabel(r)}`.toLowerCase();
       return hay.includes(q);
     });
     const byAge = (a, b) => (a.submittedAt < b.submittedAt ? -1 : 1);
     return [...list].sort((a, b) =>
       sort === 'oldest' ? byAge(a, b)
       : sort === 'newest' ? -byAge(a, b)
-      : businessDays(b.start, b.end) - businessDays(a.start, a.end)
+      : requestDays(b) - requestDays(a)
     );
   }, [teamScoped, query, sort]);
 
@@ -226,7 +227,7 @@ export default function Approvals() {
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-ink transition-colors group-hover/d:text-accent-ink">{employee?.name}</p>
                     <p className="text-xs text-ink-mute">
-                      {ptoTypeById(r.type)?.name} · {fmtRange(r.start, r.end)}
+                      {requestTypeLabel(r)} · {requestRangeLabel(r)}
                     </p>
                   </div>
                 </button>

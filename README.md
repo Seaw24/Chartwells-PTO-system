@@ -15,7 +15,7 @@ npm run preview  # preview the build
 ```
 
 Any email/password signs you in. Use the **demo toolbar** (bottom-right) to switch between
-the six mock users/roles and to time-travel "today".
+the demo users/roles and to time-travel "today".
 
 ## Stack
 

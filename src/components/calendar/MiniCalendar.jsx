@@ -5,6 +5,7 @@ import { useDataSource } from '../../data/dataSource';
 import { useToday } from '../../data/today';
 import { monthGrid, toDate, toISO, WEEKDAYS, rangesOverlap, fmtMonthYear } from '../../utils/dateHelpers';
 import { ptoTypeById } from '../../utils/constants';
+import { lineEntriesForRequest } from '../../utils/requestHelpers';
 
 // Design notes: Dashboard glance — the user's own approved/pending PTO as colour dots
 //   under each date, today as a filled accent-strong disc (white-on-accent AA). Whole
@@ -22,7 +23,9 @@ export default function MiniCalendar({ userId }) {
     Promise.all([requestsForUser(userId), getHolidays()]).then(([requestRows, holidays]) => {
       if (!alive) return;
       setData({
-        requests: requestRows.filter((r) => ['approved', 'pending'].includes(r.status)),
+        requests: requestRows
+          .filter((r) => ['approved', 'pending'].includes(r.status))
+          .flatMap(lineEntriesForRequest),
         holidays,
       });
     });

@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { ptoTypeById, userById, firstName } from '../../utils/constants';
-import { fmtRange, businessDays, fmtShort, relativeTime } from '../../utils/dateHelpers';
+import { fmtRange, relativeTime } from '../../utils/dateHelpers';
+import { useDataSource } from '../../data/dataSource';
+import { lineDays, requestDays, requestLines, requestRangeLabel, requestTypeLabel } from '../../utils/requestHelpers';
 import StatusChip from '../ui/StatusChip';
 import PtoTypeIcon from '../ui/PtoTypeIcon';
 import Button from '../ui/Button';
@@ -12,28 +14,54 @@ import Button from '../ui/Button';
 // References: DESIGN.md card spec; Linear list-item density.
 export default function RequestCard({ request, onCancel }) {
   const [expanded, setExpanded] = useState(false);
-  const type = ptoTypeById(request.type);
-  const days = businessDays(request.start, request.end);
+  const { normalDaysOffFor } = useDataSource();
+  const [normalDaysOff, setNormalDaysOff] = useState([0, 6]);
+  const lines = requestLines(request);
+  const primaryType = ptoTypeById(lines[0]?.type);
+  const primaryColor = primaryType?.color || 'var(--c-ink-mute)';
+  const days = requestDays(request, normalDaysOff);
   const decider = userById(request.decidedBy);
+
+  useEffect(() => {
+    let alive = true;
+    normalDaysOffFor(request.userId).then((daysOff) => { if (alive) setNormalDaysOff(daysOff); });
+    return () => { alive = false; };
+  }, [request.userId]);
 
   return (
     <div className="rounded-card border border-line bg-card p-4 shadow-card transition-shadow hover:shadow-lift">
       <div className="flex items-start gap-3">
         <span
           className="grid h-10 w-10 shrink-0 place-items-center rounded-btn"
-          style={{ background: `color-mix(in oklch, ${type.color} 12%, var(--c-card))`, color: type.color }}
+          style={{ background: `color-mix(in oklch, ${primaryColor} 12%, var(--c-card))`, color: primaryColor }}
         >
-          <PtoTypeIcon typeId={type.id} size={18} />
+          <PtoTypeIcon typeId={primaryType?.id} size={18} />
         </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-sm font-bold text-ink">{type.name}</p>
-              <p className="text-sm text-ink-soft">{fmtRange(request.start, request.end)}</p>
+              <p className="text-sm font-bold text-ink">{requestTypeLabel(request)}</p>
+              <p className="text-sm text-ink-soft">{requestRangeLabel(request)}</p>
             </div>
             <StatusChip status={request.status} size="xs" />
           </div>
+
+          {lines.length > 1 && (
+            <div className="mt-2 space-y-1 rounded-btn bg-panel px-3 py-2">
+              {lines.map((line, index) => {
+                const type = ptoTypeById(line.type);
+                return (
+                  <div key={`${line.type}-${line.start}-${index}`} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="min-w-0 truncate text-ink-soft">
+                      <span className="font-semibold text-ink">{type?.name}</span> · {fmtRange(line.start, line.end)}
+                    </span>
+                    <span className="shrink-0 tabular text-ink-mute">{lineDays(line, normalDaysOff)}d</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-mute">
             <span className="font-medium text-ink-soft tabular">{days} day{days === 1 ? '' : 's'}</span>

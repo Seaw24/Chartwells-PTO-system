@@ -5,8 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useDataSource } from '../../data/dataSource';
 import { useToday } from '../../data/today';
-import { PTO_TYPES, DEFAULT_BALANCES, teamById, ptoTypeById } from '../../utils/constants';
-import { fmtRange, businessDays } from '../../utils/dateHelpers';
+import { PTO_TYPES, teamById, ptoTypeById } from '../../utils/constants';
+import { requestDays, requestLines, requestRangeLabel, requestStart, requestTypeLabel } from '../../utils/requestHelpers';
 import Avatar from '../ui/Avatar';
 import RolePill from '../ui/RolePill';
 import StatusChip from '../ui/StatusChip';
@@ -19,10 +19,14 @@ import { CalendarX } from 'lucide-react';
 //   base (or the PTO type's own colour) so it still pops at a glance.
 export function memberStatus(member, requests, holidays, todayIso) {
   const onPto = requests.find(
-    (r) => r.userId === member.id && r.status === 'approved' && r.start <= todayIso && r.end >= todayIso
+    (r) =>
+      r.userId === member.id &&
+      r.status === 'approved' &&
+      requestLines(r).some((line) => line.start <= todayIso && line.end >= todayIso)
   );
   if (onPto) {
-    return { label: `On PTO · ${ptoTypeById(onPto.type)?.name}`, tone: 'var(--c-accent-ink)', dot: ptoTypeById(onPto.type)?.color };
+    const line = requestLines(onPto).find((l) => l.start <= todayIso && l.end >= todayIso);
+    return { label: `On PTO · ${ptoTypeById(line?.type)?.name}`, tone: 'var(--c-accent-ink)', dot: ptoTypeById(line?.type)?.color };
   }
   if (holidays.some((h) => h.date === todayIso)) {
     return { label: 'Off today · Holiday', tone: 'var(--c-warning-ink)', dot: 'var(--c-warning)' };
@@ -32,7 +36,7 @@ export function memberStatus(member, requests, holidays, todayIso) {
 
 export default function EmployeeProfile({ member }) {
   const navigate = useNavigate();
-  const { requestsForUser, usedFor, getRequests, getHolidays } = useDataSource();
+  const { requestsForUser, usedFor, grantFor, normalDaysOffFor, getRequests, getHolidays } = useDataSource();
   const todayIso = useToday();
   const [data, setData] = useState(null);
 
@@ -44,20 +48,26 @@ export default function EmployeeProfile({ member }) {
       getRequests(),
       getHolidays(),
       Promise.all(PTO_TYPES.map((t) => usedFor(member.id, t.id))),
-    ]).then(([history, requests, holidays, usedList]) => {
+      Promise.all(PTO_TYPES.map((t) => grantFor(member.id, t.id))),
+      normalDaysOffFor(member.id),
+    ]).then(([history, requests, holidays, usedList, grantList, normalDaysOff]) => {
       if (!alive) return;
       const usedByType = {};
-      PTO_TYPES.forEach((t, i) => { usedByType[t.id] = usedList[i]; });
-      setData({ history, requests, holidays, usedByType });
+      const grantByType = {};
+      PTO_TYPES.forEach((t, i) => {
+        usedByType[t.id] = usedList[i];
+        grantByType[t.id] = grantList[i];
+      });
+      setData({ history, requests, holidays, usedByType, grantByType, normalDaysOff });
     });
     return () => { alive = false; };
   }, [member.id]);
 
   if (data === null) return null;
 
-  const { requests, holidays, usedByType } = data;
+  const { requests, holidays, usedByType, grantByType, normalDaysOff } = data;
   // Newest on the left, oldest on the right (scroll right to go back in time).
-  const history = [...data.history].sort((a, b) => (a.start < b.start ? 1 : -1));
+  const history = [...data.history].sort((a, b) => (requestStart(a) < requestStart(b) ? 1 : -1));
   const status = memberStatus(member, requests, holidays, todayIso);
 
   return (
@@ -82,7 +92,7 @@ export default function EmployeeProfile({ member }) {
       {/* Balances */}
       <div className="space-y-2.5">
         {PTO_TYPES.map((t) => {
-          const total = DEFAULT_BALANCES[t.id];
+          const total = grantByType[t.id];
           const used = usedByType[t.id];
           return (
             <div key={t.id}>
@@ -112,7 +122,10 @@ export default function EmployeeProfile({ member }) {
         ) : (
           <div className="-mx-1 flex gap-3 overflow-x-auto scrollbar-slim px-1 pb-1">
             {history.map((r) => {
-              const type = ptoTypeById(r.type);
+              const lines = requestLines(r);
+              const type = ptoTypeById(lines[0]?.type);
+              const color = type?.color || 'var(--c-ink-mute)';
+              const days = requestDays(r, normalDaysOff);
               return (
                 <button
                   type="button"
@@ -124,18 +137,18 @@ export default function EmployeeProfile({ member }) {
                   <div className="flex items-start justify-between gap-2">
                     <span
                       className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
-                      style={{ background: `color-mix(in oklch, ${type.color} 12%, var(--c-card))`, color: type.color }}
+                      style={{ background: `color-mix(in oklch, ${color} 12%, var(--c-card))`, color }}
                     >
-                      <PtoTypeIcon typeId={type.id} size={16} />
+                      <PtoTypeIcon typeId={type?.id} size={16} />
                     </span>
                     <StatusChip status={r.status} size="xs" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-ink">{type.name}</p>
-                    <p className="text-xs text-ink-soft">{fmtRange(r.start, r.end)}</p>
+                    <p className="text-sm font-bold text-ink">{requestTypeLabel(r)}</p>
+                    <p className="text-xs text-ink-soft">{requestRangeLabel(r)}</p>
                   </div>
                   <p className="text-[11px] text-ink-mute">
-                    <span className="font-medium text-ink-soft tabular">{businessDays(r.start, r.end)}</span> business day{businessDays(r.start, r.end) === 1 ? '' : 's'}
+                    <span className="font-medium text-ink-soft tabular">{days}</span> charged day{days === 1 ? '' : 's'}
                   </p>
                 </button>
               );

@@ -5,8 +5,8 @@
 import { useEffect, useState } from 'react';
 import { Mail, Users2, ShieldCheck, CalendarPlus } from 'lucide-react';
 import { useRequestModal } from '../components/requests/RequestModalProvider';
-import { teamById, ROLES, ptoTypeById } from '../utils/constants';
-import { fmtRange, businessDays } from '../utils/dateHelpers';
+import { teamById, ptoTypeById } from '../utils/constants';
+import { requestDays, requestLines, requestRangeLabel, requestTypeLabel } from '../utils/requestHelpers';
 import Avatar from '../components/ui/Avatar';
 import RolePill from '../components/ui/RolePill';
 import StatusChip from '../components/ui/StatusChip';
@@ -20,20 +20,23 @@ import { useCurrentUser } from '../data/session';
 
 export default function Profile() {
   const activeUser = useCurrentUser();          // identity: sync, available immediately
-  const { requestsForUser } = useDataSource();
+  const { requestsForUser, normalDaysOffFor } = useDataSource();
   const { openRequest } = useRequestModal();
 
-  const [history, setHistory] = useState(null); // data: fetched
+  const [data, setData] = useState(null); // data: fetched
 
   useEffect(() => {
     let alive = true;
-    requestsForUser(activeUser.id).then((rows) => { if (alive) setHistory(rows); });
+    Promise.all([requestsForUser(activeUser.id), normalDaysOffFor(activeUser.id)]).then(([history, normalDaysOff]) => {
+      if (alive) setData({ history, normalDaysOff });
+    });
     return () => { alive = false; };
   }, [activeUser.id]);
 
-  if (history === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
+  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
 
-  const ytd = history.filter((r) => r.status === 'approved').reduce((s, r) => s + businessDays(r.start, r.end), 0);
+  const { history, normalDaysOff } = data;
+  const ytd = history.filter((r) => r.status === 'approved').reduce((s, r) => s + requestDays(r, normalDaysOff), 0);
 
   return (
     <div className="space-y-6">
@@ -73,22 +76,27 @@ export default function Profile() {
         ) : (
           <div className="overflow-hidden rounded-card border border-line bg-card shadow-card">
             <ul className="divide-y divide-line-soft">
-              {history.map((r) => (
-                <li key={r.id} className="flex items-center gap-3 px-4 py-3">
-                  <span
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
-                    style={{ background: `color-mix(in oklch, ${ptoTypeById(r.type)?.color} 12%, var(--c-card))`, color: ptoTypeById(r.type)?.color }}
-                  >
-                    <PtoTypeIcon typeId={r.type} size={16} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-ink">{ptoTypeById(r.type)?.name}</p>
-                    <p className="text-xs text-ink-mute">{fmtRange(r.start, r.end)}</p>
-                  </div>
-                  <span className="text-xs text-ink-mute tabular">{businessDays(r.start, r.end)}d</span>
-                  <StatusChip status={r.status} size="xs" />
-                </li>
-              ))}
+              {history.map((r) => {
+                const lines = requestLines(r);
+                const type = ptoTypeById(lines[0]?.type);
+                const color = type?.color || 'var(--c-ink-mute)';
+                return (
+                  <li key={r.id} className="flex items-center gap-3 px-4 py-3">
+                    <span
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
+                      style={{ background: `color-mix(in oklch, ${color} 12%, var(--c-card))`, color }}
+                    >
+                      <PtoTypeIcon typeId={lines[0]?.type} size={16} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink">{requestTypeLabel(r)}</p>
+                      <p className="text-xs text-ink-mute">{requestRangeLabel(r)}</p>
+                    </div>
+                    <span className="text-xs text-ink-mute tabular">{requestDays(r, normalDaysOff)}d</span>
+                    <StatusChip status={r.status} size="xs" />
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

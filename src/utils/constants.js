@@ -11,13 +11,18 @@ export const ROLES = {
   employee: { label: 'Employee', tone: 'neutral' },
 };
 
+export const DEFAULT_NORMAL_DAYS_OFF = [0, 6];
+
 export const USERS = [
-  { id: 'rich', name: 'Rich Martinez', email: 'rich@chartwells.com', role: 'god_admin', team: null },
-  { id: 'kyle', name: 'Kyle Chen', email: 'kyle@chartwells.com', role: 'admin', team: 'foh' },
-  { id: 'sarah', name: 'Sarah Kim', email: 'sarah@chartwells.com', role: 'admin', team: 'boh' },
-  { id: 'alex', name: 'Alex Rivera', email: 'alex@chartwells.com', role: 'employee', team: 'foh' },
-  { id: 'jordan', name: 'Jordan Lee', email: 'jordan@chartwells.com', role: 'employee', team: 'boh' },
-  { id: 'casey', name: 'Casey Brooks', email: 'casey@chartwells.com', role: 'employee', team: 'foh' },
+  { id: 'kyle', name: 'Kyle', email: 'kyle@chartwells.com', role: 'god_admin', team: null, normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'morgan', name: 'Morgan Evans', email: 'morgan@chartwells.com', role: 'god_admin', team: null, normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'rich', name: 'Rich Martinez', email: 'rich@chartwells.com', role: 'admin', team: 'boh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'sarah', name: 'Sarah Kim', email: 'sarah@chartwells.com', role: 'admin', team: 'boh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'maya', name: 'Maya Chen', email: 'maya@chartwells.com', role: 'admin', team: 'foh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'taylor', name: 'Taylor Brooks', email: 'taylor@chartwells.com', role: 'admin', team: 'foh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'alex', name: 'Alex Rivera', email: 'alex@chartwells.com', role: 'employee', team: 'foh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'jordan', name: 'Jordan Lee', email: 'jordan@chartwells.com', role: 'employee', team: 'boh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
+  { id: 'casey', name: 'Casey Brooks', email: 'casey@chartwells.com', role: 'employee', team: 'foh', normalDaysOff: DEFAULT_NORMAL_DAYS_OFF },
 ];
 
 // PTO type colors: muted, sophisticated hex (data, not chrome). Tuned to stay distinct
@@ -62,31 +67,35 @@ export const BLACKOUT_DATES = [
 export const MOCK_REQUESTS = [
   // The signed-in demo user (Rich) carries some history so balances, upcoming time off, and
   // activity all render with real data instead of empty rings on first load.
-  { userId: 'rich', type: 'vacation', start: '2026-04-06', end: '2026-04-08', status: 'approved', decidedBy: 'rich', note: 'Spring trip with family', daysAgo: 52 },
-  { userId: 'rich', type: 'vacation', start: '2026-06-08', end: '2026-06-09', status: 'approved', decidedBy: 'rich', note: 'Long weekend', daysAgo: 8 },
-  { userId: 'rich', type: 'sick', start: '2026-03-03', end: '2026-03-03', status: 'approved', decidedBy: 'rich', note: '', daysAgo: 84 },
-  { userId: 'rich', type: 'wellness', start: '2026-05-01', end: '2026-05-01', status: 'approved', decidedBy: 'rich', note: 'Recharge day', daysAgo: 26 },
-  { userId: 'alex', type: 'vacation', start: '2026-10-13', end: '2026-10-15', status: 'approved', decidedBy: 'kyle', note: 'Family trip', daysAgo: 21 },
-  { userId: 'casey', type: 'sick', start: '2026-06-02', end: '2026-06-02', status: 'approved', decidedBy: 'kyle', note: '', daysAgo: 9 },
-  { userId: 'jordan', type: 'wellness', start: '2026-07-10', end: '2026-07-10', status: 'pending', note: 'Mental health day', daysAgo: 3 },
-  { userId: 'alex', type: 'floating', start: '2026-03-17', end: '2026-03-17', status: 'approved', decidedBy: 'kyle', note: "St. Patrick's Day", daysAgo: 70 },
-  { userId: 'casey', type: 'vacation', start: '2026-10-13', end: '2026-10-14', status: 'pending', note: 'Short getaway', daysAgo: 6 },
-  { userId: 'jordan', type: 'sick', start: '2026-05-20', end: '2026-05-21', status: 'approved', decidedBy: 'sarah', note: 'Flu', daysAgo: 5 },
-  { userId: 'kyle', type: 'vacation', start: '2026-12-22', end: '2026-12-26', status: 'pending', note: 'Holiday break', daysAgo: 2 },
-  { userId: 'sarah', type: 'bereavement', start: '2026-04-14', end: '2026-04-16', status: 'approved', decidedBy: 'rich', note: '', daysAgo: 42 },
-  { userId: 'alex', type: 'sick', start: '2026-02-10', end: '2026-02-10', status: 'denied', decidedBy: 'kyle', note: '', denialReason: 'No coverage available; please reschedule.', daysAgo: 60 },
+  { userId: 'rich', lines: [{ type: 'vacation', start: '2026-04-06', end: '2026-04-08' }], status: 'approved', decidedBy: 'sarah', note: 'Spring trip with family', daysAgo: 52 },
+  { userId: 'rich', lines: [{ type: 'vacation', start: '2026-06-08', end: '2026-06-09' }], status: 'approved', decidedBy: 'sarah', note: 'Long weekend', daysAgo: 8 },
+  { userId: 'rich', lines: [{ type: 'sick', start: '2026-03-03', end: '2026-03-03' }], status: 'approved', decidedBy: 'sarah', note: '', daysAgo: 84 },
+  { userId: 'rich', lines: [{ type: 'wellness', start: '2026-05-01', end: '2026-05-01' }], status: 'approved', decidedBy: 'sarah', note: 'Recharge day', daysAgo: 26 },
+  { userId: 'alex', lines: [{ type: 'vacation', start: '2026-10-13', end: '2026-10-15' }], status: 'approved', decidedBy: 'maya', note: 'Family trip', daysAgo: 21 },
+  { userId: 'casey', lines: [{ type: 'sick', start: '2026-06-02', end: '2026-06-02' }], status: 'approved', decidedBy: 'taylor', note: '', daysAgo: 9 },
+  { userId: 'jordan', lines: [{ type: 'wellness', start: '2026-07-10', end: '2026-07-10' }], status: 'pending', note: 'Mental health day', daysAgo: 3 },
+  { userId: 'alex', lines: [{ type: 'floating', start: '2026-03-17', end: '2026-03-17' }], status: 'approved', decidedBy: 'maya', note: "St. Patrick's Day", daysAgo: 70 },
+  { userId: 'casey', lines: [{ type: 'vacation', start: '2026-10-13', end: '2026-10-14' }], status: 'pending', note: 'Short getaway', daysAgo: 6 },
+  { userId: 'jordan', lines: [{ type: 'sick', start: '2026-05-20', end: '2026-05-21' }], status: 'approved', decidedBy: 'sarah', note: 'Flu', daysAgo: 5 },
+  { userId: 'kyle', lines: [{ type: 'vacation', start: '2026-12-22', end: '2026-12-26' }], status: 'pending', note: 'Holiday break', daysAgo: 2 },
+  { userId: 'sarah', lines: [{ type: 'bereavement', start: '2026-04-14', end: '2026-04-16' }], status: 'approved', decidedBy: 'rich', note: '', daysAgo: 42 },
+  { userId: 'maya', lines: [{ type: 'wellness', start: '2026-06-15', end: '2026-06-15' }], status: 'pending', note: 'Supervisor coverage', daysAgo: 4 },
+  { userId: 'alex', lines: [{ type: 'sick', start: '2026-02-10', end: '2026-02-10' }], status: 'denied', decidedBy: 'kyle', note: '', denialReason: 'No coverage available; please reschedule.', daysAgo: 60 },
 ];
 
-// Default per-user yearly grant for each PTO type.
-export const DEFAULT_BALANCES = PTO_TYPES.reduce((acc, t) => {
-  acc[t.id] = t.defaultDays;
+// Seed/template grant for each active person x active PTO type.
+export const DEFAULT_GRANTS = USERS.reduce((acc, u) => {
+  acc[u.id] = PTO_TYPES.reduce((row, t) => {
+    row[t.id] = t.defaultDays;
+    return row;
+  }, {});
   return acc;
 }, {});
 
 // Mock "today" used across the demo so seeded data lands in a believable window.
 export const DEMO_TODAY = '2026-05-26';
 
-export const STORAGE_KEY = 'chartwells-pto-demo-v2';
+export const STORAGE_KEY = 'chartwells-pto-demo-v3';
 
 // ---- lookup helpers ----
 export const userById = (id) => USERS.find((u) => u.id === id);

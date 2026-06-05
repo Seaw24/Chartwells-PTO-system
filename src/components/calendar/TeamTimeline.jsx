@@ -114,10 +114,10 @@ export default function TeamTimeline({ anchorDate, members, requests, holidays, 
                       const pending = b.status === 'pending';
                       return (
                         <button
-                          key={b.id}
+                          key={b.lineKey || b.id}
                           onClick={() => onChipClick?.(b)}
                           className={`absolute flex h-6 items-center gap-1 truncate rounded-chip px-2 text-[11px] font-semibold transition-[background,border-color,box-shadow] duration-[180ms] ease-out hover:shadow-card ${
-                            b.id === highlight?.id ? 'shadow-lift ring-2 ring-accent-strong ring-offset-1' : ''
+                            (b.requestId || b.id) === highlight?.id ? 'shadow-lift ring-2 ring-accent-strong ring-offset-1' : ''
                           }`}
                           style={{
                             top: `${8 + bi * 28}px`,

@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Check, X, Users, CalendarSearch, History } from 'lucide-react';
 import { useDataSource } from '../../data/dataSource';
 import { useCurrentUser } from '../../data/session';
-import { userById, teamById, ptoTypeById, DEFAULT_BALANCES, firstName } from '../../utils/constants';
-import { fmtRange, businessDays, relativeTime, fmtTime } from '../../utils/dateHelpers';
+import { userById, teamById, ptoTypeById, firstName } from '../../utils/constants';
+import { fmtRange, relativeTime, fmtTime } from '../../utils/dateHelpers';
 import { conflictsFor } from '../../utils/policyEngine';
+import { canDecideRequest, lineDays, requestDays, requestLines, requestRangeLabel, requestTypeIds, requestTypeLabel } from '../../utils/requestHelpers';
 import Modal from '../ui/Modal';
 import Avatar from '../ui/Avatar';
 import RolePill from '../ui/RolePill';
@@ -22,7 +23,7 @@ import { useToast } from '../ui/Toast';
 // References: Linear issue peek; the feedback's "pop-up widget, blur behind, see in calendar".
 export default function RequestDetailModal({ requestId, open, onClose, onOpenPerson, onChanged }) {
   const activeUser = useCurrentUser();
-  const { getRequests, getUsers, balanceFor, approveRequest, denyRequest } = useDataSource();
+  const { getRequests, getUsers, balanceFor, grantFor, normalDaysOffFor, approveRequest, denyRequest } = useDataSource();
   const toast = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -45,8 +46,20 @@ export default function RequestDetailModal({ requestId, open, onClose, onOpenPer
         if (alive) setData({ requests, users, req: null, balance: null });
         return;
       }
-      balanceFor(req.userId, req.type).then((balance) => {
-        if (alive) setData({ requests, users, req, balance });
+      const typeIds = requestTypeIds(req);
+      Promise.all([
+        Promise.all(typeIds.map((typeId) => balanceFor(req.userId, typeId))),
+        Promise.all(typeIds.map((typeId) => grantFor(req.userId, typeId))),
+        normalDaysOffFor(req.userId),
+      ]).then(([balanceList, grantList, normalDaysOff]) => {
+        if (!alive) return;
+        const balances = {};
+        const grants = {};
+        typeIds.forEach((typeId, i) => {
+          balances[typeId] = balanceList[i];
+          grants[typeId] = grantList[i];
+        });
+        setData({ requests, users, req, balances, grants, normalDaysOff });
       });
     });
     return () => { alive = false; };
@@ -54,13 +67,14 @@ export default function RequestDetailModal({ requestId, open, onClose, onOpenPer
 
   if (!data || !data.req) return null;
 
-  const { requests, users, req, balance } = data;
+  const { requests, users, req, balances, grants, normalDaysOff } = data;
   const employee = userById(req.userId);
-  const type = ptoTypeById(req.type);
-  const days = businessDays(req.start, req.end);
+  const lines = requestLines(req);
+  const typeIds = requestTypeIds(req);
+  const days = requestDays(req, normalDaysOff);
   const decider = userById(req.decidedBy);
   const conflicts = conflictsFor({
-    draft: { start: req.start, end: req.end },
+    draft: req,
     requests,
     users,
     selfId: req.userId,
@@ -68,8 +82,7 @@ export default function RequestDetailModal({ requestId, open, onClose, onOpenPer
   });
   const canAct =
     req.status === 'pending' &&
-    (activeUser.role === 'god_admin' ||
-      (activeUser.role === 'admin' && employee?.team === activeUser.team && employee.id !== activeUser.id));
+    canDecideRequest(activeUser, req, users);
 
   const seeInCalendar = () => { onClose?.(); navigate(`/calendar?req=${req.id}`); };
   const approve = () => {
@@ -113,12 +126,19 @@ export default function RequestDetailModal({ requestId, open, onClose, onOpenPer
 
         {/* Facts */}
         <dl className="space-y-2.5 rounded-card border border-line bg-surface/60 px-4 py-3 text-sm">
-          <Row label="Type"><PtoTypePill typeId={req.type} size="sm" /></Row>
-          <Row label="Dates"><span className="font-medium text-ink">{fmtRange(req.start, req.end)}</span></Row>
-          <Row label="Length"><span className="tabular text-ink">{days} business day{days === 1 ? '' : 's'}</span></Row>
+          <Row label="Request"><span className="font-medium text-ink">{requestTypeLabel(req)}</span></Row>
+          <Row label="Dates"><span className="font-medium text-ink">{requestRangeLabel(req)}</span></Row>
+          <Row label="Length"><span className="tabular text-ink">{days} charged day{days === 1 ? '' : 's'}</span></Row>
           <Row label="Balance">
             <span className="text-ink-soft">
-              {firstName(employee?.name)} has <b className="text-ink tabular">{balance}/{DEFAULT_BALANCES[req.type]}</b> {type.name.toLowerCase()} left
+              {typeIds.map((typeId) => {
+                const type = ptoTypeById(typeId);
+                return (
+                  <span key={typeId} className="ml-2 first:ml-0">
+                    <b className="text-ink tabular">{balances[typeId]}/{grants[typeId]}</b> {type?.name.toLowerCase()}
+                  </span>
+                );
+              })}
             </span>
           </Row>
           <Row label="Submitted"><span className="text-ink-soft">{relativeTime(req.submittedAt)}</span></Row>
@@ -128,6 +148,20 @@ export default function RequestDetailModal({ requestId, open, onClose, onOpenPer
             </Row>
           )}
         </dl>
+
+        {lines.length > 1 && (
+          <div className="space-y-1.5 rounded-card border border-line bg-card px-3 py-2 text-sm">
+            {lines.map((line, index) => (
+              <div key={`${line.type}-${line.start}-${index}`} className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <PtoTypePill typeId={line.type} size="xs" />
+                  <span className="truncate text-ink-soft">{fmtRange(line.start, line.end)}</span>
+                </span>
+                <span className="shrink-0 text-xs tabular text-ink-mute">{lineDays(line, normalDaysOff)}d</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Conflicts */}
         <div className={`flex items-center gap-2 rounded-card px-3 py-2 text-xs ${conflicts.length ? 'bg-warning-soft text-ink-soft' : 'bg-panel text-ink-mute'}`}>

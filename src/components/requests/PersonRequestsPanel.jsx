@@ -2,8 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { differenceInCalendarDays, format } from 'date-fns';
 import { Check, X, Ban, Clock } from 'lucide-react';
 import { useDataSource } from '../../data/dataSource';
-import { PTO_TYPES, DEFAULT_BALANCES, ptoTypeById, userById, teamById } from '../../utils/constants';
-import { fmtRange, businessDays, toDate } from '../../utils/dateHelpers';
+import { PTO_TYPES, ptoTypeById, userById, teamById } from '../../utils/constants';
+import { fmtRange, toDate } from '../../utils/dateHelpers';
+import {
+  lineEntriesForRequest,
+  requestDays,
+  requestLines,
+  requestRangeLabel,
+  requestStart,
+  requestTypeLabel,
+} from '../../utils/requestHelpers';
 import Modal from '../ui/Modal';
 import Avatar from '../ui/Avatar';
 import RolePill from '../ui/RolePill';
@@ -24,7 +32,7 @@ const STATUS_ICON = { approved: Check, pending: Clock, denied: X, cancelled: Ban
 const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
 export default function PersonRequestsPanel({ userId, open, onClose, onOpenRequest }) {
-  const { requestsForUser, balanceFor } = useDataSource();
+  const { requestsForUser, balanceFor, grantFor, normalDaysOffFor } = useDataSource();
   const [data, setData] = useState(null);
   const member = userById(userId);
 
@@ -38,31 +46,38 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
     Promise.all([
       requestsForUser(userId),
       Promise.all(PTO_TYPES.map((t) => balanceFor(userId, t.id))),
-    ]).then(([requests, balances]) => {
+      Promise.all(PTO_TYPES.map((t) => grantFor(userId, t.id))),
+      normalDaysOffFor(userId),
+    ]).then(([requests, balances, grants, normalDaysOff]) => {
       if (!alive) return;
       const balanceByType = {};
-      PTO_TYPES.forEach((t, i) => { balanceByType[t.id] = balances[i]; });
-      setData({ requests, balanceByType });
+      const grantByType = {};
+      PTO_TYPES.forEach((t, i) => {
+        balanceByType[t.id] = balances[i];
+        grantByType[t.id] = grants[i];
+      });
+      setData({ requests, balanceByType, grantByType, normalDaysOff });
     });
     return () => { alive = false; };
   }, [userId]);
 
   const requests = data?.requests ?? [];
+  const lineEntries = useMemo(() => requests.flatMap(lineEntriesForRequest), [requests]);
 
   // Pick the year with the most activity for the timeline (seed data is 2026).
   const year = useMemo(() => {
     if (!requests.length) return new Date().getFullYear();
     const counts = {};
-    requests.forEach((r) => { const y = toDate(r.start).getFullYear(); counts[y] = (counts[y] || 0) + 1; });
+    lineEntries.forEach((r) => { const y = toDate(r.start).getFullYear(); counts[y] = (counts[y] || 0) + 1; });
     return Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
-  }, [requests]);
+  }, [lineEntries, requests.length]);
 
   // Position each in-year request on a horizontal track, packing into lanes so overlapping
   // ranges don't collide.
   const { lanes, laneCount } = useMemo(() => {
     const yStart = new Date(year, 0, 1);
     const yDays = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
-    const inYear = requests
+    const inYear = lineEntries
       .filter((r) => toDate(r.start).getFullYear() === year || toDate(r.end).getFullYear() === year)
       .map((r) => {
         const s = Math.max(0, differenceInCalendarDays(toDate(r.start), yStart));
@@ -79,10 +94,10 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
       return { ...r, lane };
     });
     return { lanes: placed, laneCount: Math.max(laneEnds.length, 1) };
-  }, [requests, year]);
+  }, [lineEntries, year]);
 
   const sorted = useMemo(
-    () => [...requests].sort((a, b) => (a.start < b.start ? -1 : 1)),
+    () => [...requests].sort((a, b) => (requestStart(a) < requestStart(b) ? -1 : 1)),
     [requests]
   );
 
@@ -105,7 +120,7 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
           </div>
           <div className="flex flex-wrap gap-1.5">
             {PTO_TYPES.map((t) => {
-              const total = DEFAULT_BALANCES[t.id];
+              const total = data.grantByType[t.id];
               const left = data.balanceByType[t.id];
               return (
                 <span
@@ -148,8 +163,8 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
                   return (
                     <button
                       type="button"
-                      key={r.id}
-                      onClick={() => onOpenRequest?.(r.id)}
+                      key={r.lineKey || r.id}
+                      onClick={() => onOpenRequest?.(r.requestId || r.id)}
                       className="absolute flex h-[22px] items-center gap-1 overflow-hidden rounded-chip px-1.5 text-[10px] font-semibold transition-shadow hover:shadow-lift"
                       style={{
                         top: `${r.lane * 26 + 2}px`,
@@ -194,7 +209,10 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
           ) : (
             <div className="-mx-1 flex gap-3 overflow-x-auto scrollbar-slim px-1 pb-1">
               {sorted.map((r) => {
-                const type = ptoTypeById(r.type);
+                const lines = requestLines(r);
+                const type = ptoTypeById(lines[0]?.type);
+                const color = type?.color || 'var(--c-ink-mute)';
+                const days = requestDays(r, data.normalDaysOff);
                 return (
                   <button
                     type="button"
@@ -205,20 +223,29 @@ export default function PersonRequestsPanel({ userId, open, onClose, onOpenReque
                     <div className="flex items-start justify-between gap-2">
                       <span
                         className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
-                        style={{ background: `color-mix(in oklch, ${type.color} 12%, var(--c-card))`, color: type.color }}
+                        style={{ background: `color-mix(in oklch, ${color} 12%, var(--c-card))`, color }}
                       >
-                        <PtoTypeIcon typeId={type.id} size={16} />
+                        <PtoTypeIcon typeId={type?.id} size={16} />
                       </span>
                       <StatusChip status={r.status} size="xs" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-ink">{type.name}</p>
-                      <p className="text-xs text-ink-soft">{fmtRange(r.start, r.end)}</p>
+                      <p className="text-sm font-bold text-ink">{requestTypeLabel(r)}</p>
+                      <p className="text-xs text-ink-soft">{requestRangeLabel(r)}</p>
                     </div>
                     <p className="text-[11px] text-ink-mute">
-                      <span className="font-medium text-ink-soft tabular">{businessDays(r.start, r.end)}</span> business day{businessDays(r.start, r.end) === 1 ? '' : 's'}
+                      <span className="font-medium text-ink-soft tabular">{days}</span> charged day{days === 1 ? '' : 's'}
                       {r.decidedBy && ` · by ${userById(r.decidedBy)?.name?.split(' ')[0]}`}
                     </p>
+                    {lines.length > 1 && (
+                      <div className="space-y-1">
+                        {lines.map((line, index) => (
+                          <p key={`${line.type}-${line.start}-${index}`} className="truncate text-[11px] text-ink-mute">
+                            {ptoTypeById(line.type)?.name}: {fmtRange(line.start, line.end)}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     {r.status === 'denied' && r.denialReason && (
                       <p className="rounded-chip bg-danger-soft px-2 py-1 text-[11px] text-danger-ink">{r.denialReason}</p>
                     )}

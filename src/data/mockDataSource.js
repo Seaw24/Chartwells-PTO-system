@@ -46,6 +46,8 @@ export function useMockDataSource() {
     outOnDay: async (iso, teamId = null) => ctx.outOnDay(iso, teamId),
     balanceFor: async (userId, typeId) => ctx.balanceFor(userId, typeId),
     usedFor: async (userId, typeId) => ctx.usedFor(userId, typeId),
+    grantFor: async (userId, typeId) => ctx.grantFor(userId, typeId),
+    normalDaysOffFor: async (userId) => ctx.normalDaysOffFor(userId),
     getUsers: async () => ctx.users,
     getTeams: async () => ctx.teams,
     getPtoTypes: async () => ctx.ptoTypes,
@@ -57,15 +59,12 @@ export function useMockDataSource() {
 
     /* ------------------------------- writes ------------------------------ */
     // Actor (me.id) is filled in here, never passed by the screen.
-
     submitRequest: async (draft) => {
       const id = ctx.submitRequest(draft); // DemoContext returns the new id
       return {
         id,
         userId: me.id,
-        type: draft.type,
-        start: draft.start,
-        end: draft.end,
+        lines: draft.lines,
         status: 'pending',
         note: draft.note || '',
         decidedBy: null,
@@ -83,6 +82,7 @@ export function useMockDataSource() {
 
     approveRequest: async (id) => {
       const prev = find(id);
+      if (!ctx.canDecideRequest(me, prev)) throw new Error('You are not allowed to approve this request.');
       ctx.approveRequest(id, me.id);
       return prev
         ? { ...prev, status: 'approved', decidedBy: me.id, decidedAt: ctx.todayIso, denialReason: null }
@@ -91,6 +91,7 @@ export function useMockDataSource() {
 
     denyRequest: async (id, reason) => {
       const prev = find(id);
+      if (!ctx.canDecideRequest(me, prev)) throw new Error('You are not allowed to deny this request.');
       ctx.denyRequest(id, me.id, reason);
       return prev
         ? { ...prev, status: 'denied', decidedBy: me.id, decidedAt: ctx.todayIso, denialReason: reason }
@@ -116,6 +117,10 @@ export function useMockDataSource() {
       });
       return { approved, failed };
     },
+
+    setGrant: async (userId, typeId, amount) => ctx.setGrant(userId, typeId, amount),
+
+    setNormalDaysOff: async (userId, days) => ctx.setNormalDaysOff(userId, days),
 
     undoDecision: async (id) => {
       // NOTE (T1, later): the real rules (caller authorized on this request + within

@@ -21,6 +21,7 @@ import { useToday } from '../data/today';
 import { useRequestModal } from '../components/requests/RequestModalProvider';
 import { canApprove, PTO_TYPES, userById, firstName, TEAMS } from '../utils/constants';
 import { toDate, toISO, fmtMonthYear, fmtRange } from '../utils/dateHelpers';
+import { lineEntriesForRequest, requestLines, requestStart, requestTypeLabel } from '../utils/requestHelpers';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import PersonPicker from '../components/ui/PersonPicker';
 import Button from '../components/ui/Button';
@@ -78,7 +79,7 @@ export default function CalendarPage() {
     if (!reqId) return;
     const target = requests.find((r) => r.id === reqId);
     if (target) {
-      setCursor(toDate(target.start));
+      setCursor(toDate(requestStart(target)));
       setHighlightId(reqId);
     }
     setParams({}, { replace: true });
@@ -108,21 +109,22 @@ export default function CalendarPage() {
   // so "See in calendar" always shows the marked request even if the current filters
   // (type/status/person) would otherwise hide it.
   const scoped = useMemo(() => {
-    const list = requests.filter((r) => {
+    const list = requests.flatMap((r) => {
       const author = userById(r.userId);
       if (activeUser.role === 'employee') {
-        if (author?.team !== activeUser.team) return false;
+        if (author?.team !== activeUser.team) return [];
       } else if (activeUser.role === 'admin') {
-        if (author?.team !== activeUser.team) return false;
+        if (author?.team !== activeUser.team) return [];
       } else if (teamFilter !== 'all') {
-        if (author?.team !== teamFilter) return false;
+        if (author?.team !== teamFilter) return [];
       }
-      if (personFilter !== 'all' && r.userId !== personFilter) return false;
-      if (!typeFilter.has(r.type)) return false;
-      if (!statusFilter.has(r.status)) return false;
-      return true;
+      if (personFilter !== 'all' && r.userId !== personFilter) return [];
+      if (!statusFilter.has(r.status)) return [];
+      return lineEntriesForRequest(r).filter((entry) => typeFilter.has(entry.type));
     });
-    if (highlightReq && !list.some((r) => r.id === highlightReq.id)) list.push(highlightReq);
+    if (highlightReq && !list.some((r) => r.requestId === highlightReq.id)) {
+      list.push(...lineEntriesForRequest(highlightReq));
+    }
     return list;
   }, [requests, activeUser, teamFilter, personFilter, typeFilter, statusFilter, highlightReq]);
 
@@ -150,7 +152,7 @@ export default function CalendarPage() {
   function jumpToNextOff() {
     if (!nextOff) return;
     setCursor(toDate(nextOff.start));
-    setHighlightId(nextOff.id);
+    setHighlightId(nextOff.requestId || nextOff.id);
   }
 
   // Manual period navigation drops any deep-link / jump highlight.
@@ -305,7 +307,7 @@ export default function CalendarPage() {
         {detailList && (
           <ul className="space-y-2">
             {detailList.map((r) => (
-              <li key={r.id}>
+              <li key={r.lineKey || r.id}>
                 <button
                   onClick={() => {
                     setDetailList(null);
@@ -329,6 +331,8 @@ export default function CalendarPage() {
 
 function ChipDetail({ req, users }) {
   const approver = users.find((u) => u.id === req.decidedBy);
+  const lines = requestLines(req);
+  const selectedLine = req.line || lines[0];
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -339,8 +343,9 @@ function ChipDetail({ req, users }) {
         </div>
       </div>
       <dl className="space-y-2.5 text-sm">
-        <Row label="Type"><PtoTypePill typeId={req.type} size="sm" /></Row>
-        <Row label="Dates"><span className="font-medium text-ink">{fmtRange(req.start, req.end)}</span></Row>
+        <Row label="Request"><span className="font-medium text-ink">{requestTypeLabel(req)}</span></Row>
+        <Row label="Type"><PtoTypePill typeId={selectedLine.type} size="sm" /></Row>
+        <Row label="Dates"><span className="font-medium text-ink">{fmtRange(selectedLine.start, selectedLine.end)}</span></Row>
         <Row label="Status"><StatusChip status={req.status} size="xs" /></Row>
         {approver && <Row label="Decided by"><span className="text-ink">{approver.name}</span></Row>}
         {req.note && <Row label="Note"><span className="text-ink-soft">{req.note}</span></Row>}

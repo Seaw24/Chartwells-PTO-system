@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import { weekGrid, toISO, rangesOverlap, toDate } from '../../utils/dateHelpers';
 import { isBlackoutDay } from '../../utils/policyEngine';
 import { ptoTypeById, userById, firstName } from '../../utils/constants';
+import { requestOverlapsDay } from '../../utils/requestHelpers';
 
 // Design notes: Seven tall columns for a closer look at one week. Chips share the
 //   month-view language (type dot + tint, dashed = pending, solid = approved) but get
@@ -23,7 +24,7 @@ export default function WeekView({ anchorDate, requests, holidays, todayIso, hig
           const isWeekend = d.getDay() === 0 || d.getDay() === 6;
           const holiday = holidays.find((h) => h.date === iso);
           const blackout = isBlackoutDay(iso);
-          const inHighlight = highlight && rangesOverlap(iso, iso, highlight.start, highlight.end);
+          const inHighlight = highlight && requestOverlapsDay(highlight, iso);
           const entries = requests
             .filter((r) => rangesOverlap(iso, iso, r.start, r.end))
             .sort((a, b) => (a.status === 'approved' ? -1 : 1));
@@ -54,13 +55,13 @@ export default function WeekView({ anchorDate, requests, holidays, todayIso, hig
                   const pending = r.status === 'pending';
                   return (
                     <button
-                      key={r.id}
+                      key={r.lineKey || r.id}
                       onClick={(e) => {
                         e.stopPropagation();
                         onChipClick?.(r);
                       }}
                       className={`rounded-chip px-2 py-1.5 text-left text-xs transition-[background,border-color,box-shadow] duration-[180ms] ease-out hover:shadow-card ${
-                        r.id === highlight?.id ? 'shadow-lift ring-2 ring-accent-strong ring-offset-1' : ''
+                        (r.requestId || r.id) === highlight?.id ? 'shadow-lift ring-2 ring-accent-strong ring-offset-1' : ''
                       }`}
                       style={{
                         background: `color-mix(in oklch, ${type.color} ${pending ? 9 : 16}%, var(--c-card))`,

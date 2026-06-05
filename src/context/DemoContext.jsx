@@ -6,42 +6,93 @@ import {
   HOLIDAYS_2026,
   BLACKOUT_DATES,
   MOCK_REQUESTS,
-  DEFAULT_BALANCES,
+  DEFAULT_GRANTS,
   DEMO_TODAY,
   STORAGE_KEY,
   userById,
   firstName,
   ptoTypeById,
 } from '../utils/constants';
-import { toDate, toISO, businessDays, fmtShort, rangesOverlap } from '../utils/dateHelpers';
+import { toDate, toISO, fmtShort, rangesOverlap } from '../utils/dateHelpers';
+import {
+  canDecideRequest,
+  lineDays,
+  lineEntriesForRequest,
+  normalDaysOffForUser,
+  requestLines,
+  requestRangeLabel,
+  requestTypeLabel,
+} from '../utils/requestHelpers';
 
 export const DemoContext = createContext(null);
 
 const shiftISO = (iso, deltaDays) => toISO(new Date(toDate(iso).getTime() + deltaDays * 864e5));
+const byId = (users, id) => users.find((u) => u.id === id);
+const cleanNormalDays = (days) =>
+  Array.from(new Set((Array.isArray(days) ? days : []).map(Number).filter((d) => d >= 0 && d <= 6))).sort((a, b) => a - b);
+
+function buildDefaultGrants(users = USERS) {
+  return users.reduce((acc, u) => {
+    acc[u.id] = PTO_TYPES.reduce((row, t) => {
+      row[t.id] = DEFAULT_GRANTS[u.id]?.[t.id] ?? t.defaultDays;
+      return row;
+    }, {});
+    return acc;
+  }, {});
+}
+
+function normalizeUsers(users = USERS) {
+  return users.map((u) => ({
+    ...u,
+    normalDaysOff: cleanNormalDays(u.normalDaysOff).length ? cleanNormalDays(u.normalDaysOff) : [0, 6],
+  }));
+}
+
+function normalizeGrants(users, grants = {}) {
+  const seeded = buildDefaultGrants(users);
+  users.forEach((u) => {
+    PTO_TYPES.forEach((t) => {
+      const raw = grants?.[u.id]?.[t.id];
+      seeded[u.id][t.id] = Number.isFinite(Number(raw)) ? Math.max(0, Number(raw)) : seeded[u.id][t.id];
+    });
+  });
+  return seeded;
+}
+
+function normalizeRequest(seed, index) {
+  const submittedAt = shiftISO(DEMO_TODAY, -(seed.daysAgo ?? 1));
+  const decided = seed.status === 'approved' || seed.status === 'denied';
+  return {
+    id: seed.id || `r${index + 1}`,
+    userId: seed.userId,
+    lines: requestLines(seed).map((line) => ({ type: line.type, start: line.start, end: line.end })),
+    status: seed.status,
+    note: seed.note || '',
+    decidedBy: seed.decidedBy || null,
+    decidedAt: decided ? shiftISO(submittedAt, 1) : null,
+    denialReason: seed.denialReason || null,
+    submittedAt,
+  };
+}
+
+function requestNotice(request) {
+  const lines = requestLines(request);
+  if (lines.length === 1) {
+    return `${requestTypeLabel(request).toLowerCase()} request for ${fmtShort(lines[0].start)}–${fmtShort(lines[0].end)}`;
+  }
+  return `request with ${lines.length} PTO lines (${requestRangeLabel(request)})`;
+}
 
 // Build the initial, fully-derived state from seed constants, relative to demo "today".
 function buildInitialState() {
-  const requests = MOCK_REQUESTS.map((r, i) => {
-    const submittedAt = shiftISO(DEMO_TODAY, -(r.daysAgo ?? 1));
-    const decided = r.status === 'approved' || r.status === 'denied';
-    return {
-      id: `r${i + 1}`,
-      userId: r.userId,
-      type: r.type,
-      start: r.start,
-      end: r.end,
-      status: r.status,
-      note: r.note || '',
-      decidedBy: r.decidedBy || null,
-      decidedAt: decided ? shiftISO(submittedAt, 1) : null,
-      denialReason: r.denialReason || null,
-      submittedAt,
-    };
-  });
+  const users = normalizeUsers();
+  const requests = MOCK_REQUESTS.map(normalizeRequest);
 
   return {
     activeUserId: 'rich',
     todayIso: DEMO_TODAY,
+    users,
+    grants: normalizeGrants(users),
     requests,
     notifications: buildSeedNotifications(requests),
     readNotificationIds: [],
@@ -59,7 +110,7 @@ function buildSeedNotifications(requests) {
   if (approved) {
     push(
       { type: 'user', id: approved.userId },
-      `Your vacation request for ${fmtShort(approved.start)}–${fmtShort(approved.end)} was approved by ${firstName(userById(approved.decidedBy)?.name)}.`,
+      `Your ${requestNotice(approved)} was approved by ${firstName(userById(approved.decidedBy)?.name)}.`,
       'approved',
       approved.decidedAt
     );
@@ -69,7 +120,7 @@ function buildSeedNotifications(requests) {
     const u = userById(r.userId);
     push(
       { type: 'approvers', team: u?.team ?? null },
-      `${u?.name} submitted a ${ptoTypeById(r.type)?.name} request for ${fmtShort(r.start)}–${fmtShort(r.end)}.`,
+      `${u?.name} submitted a ${requestNotice(r)}.`,
       'submitted',
       r.submittedAt
     );
@@ -95,7 +146,18 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.requests) return parsed;
+      if (parsed && parsed.requests) {
+        const users = normalizeUsers(parsed.users || USERS);
+        return {
+          ...buildInitialState(),
+          ...parsed,
+          users,
+          grants: normalizeGrants(users, parsed.grants),
+          requests: parsed.requests.map((r, i) => ({ ...normalizeRequest(r, i), id: r.id || `r${i + 1}`, submittedAt: r.submittedAt, decidedAt: r.decidedAt })),
+          notifications: parsed.notifications || [],
+          readNotificationIds: parsed.readNotificationIds || [],
+        };
+      }
     }
   } catch {
     /* ignore corrupt storage */
@@ -115,21 +177,36 @@ export function DemoProvider({ children }) {
     }
   }, [state]);
 
-  const { activeUserId, todayIso, requests, notifications, readNotificationIds } = state;
-  const activeUser = userById(activeUserId);
+  const { activeUserId, todayIso, users, grants, requests, notifications, readNotificationIds } = state;
+  const activeUser = byId(users, activeUserId);
 
   // ---- selectors ----
+  const normalDaysOffFor = useCallback(
+    (userId) => normalDaysOffForUser(byId(users, userId)),
+    [users]
+  );
+
+  const grantFor = useCallback(
+    (userId, typeId) => grants?.[userId]?.[typeId] ?? ptoTypeById(typeId)?.defaultDays ?? 0,
+    [grants]
+  );
+
   const usedFor = useCallback(
     (userId, typeId) =>
       requests
-        .filter((r) => r.userId === userId && r.type === typeId && r.status === 'approved')
-        .reduce((sum, r) => sum + businessDays(r.start, r.end), 0),
-    [requests]
+        .filter((r) => r.userId === userId && r.status === 'approved')
+        .reduce((sum, r) => {
+          const daysOff = normalDaysOffFor(userId);
+          return sum + requestLines(r)
+            .filter((line) => line.type === typeId)
+            .reduce((lineSum, line) => lineSum + lineDays(line, daysOff), 0);
+        }, 0),
+    [normalDaysOffFor, requests]
   );
 
   const balanceFor = useCallback(
-    (userId, typeId) => (DEFAULT_BALANCES[typeId] ?? 0) - usedFor(userId, typeId),
-    [usedFor]
+    (userId, typeId) => grantFor(userId, typeId) - usedFor(userId, typeId),
+    [grantFor, usedFor]
   );
 
   const requestsForUser = useCallback(
@@ -141,25 +218,17 @@ export function DemoProvider({ children }) {
   );
 
   const teamMembers = useCallback(
-    (teamId) => USERS.filter((u) => (teamId ? u.team === teamId : true)),
-    []
+    (teamId) => users.filter((u) => (teamId ? u.team === teamId : true)),
+    [users]
   );
 
   // Pending requests this user is allowed to act on.
   const pendingForApprover = useCallback(
     (user) => {
       if (!user) return [];
-      return requests.filter((r) => {
-        if (r.status !== 'pending') return false;
-        if (user.role === 'god_admin') return true;
-        if (user.role === 'admin') {
-          const author = userById(r.userId);
-          return author?.team === user.team && author.id !== user.id;
-        }
-        return false;
-      });
+      return requests.filter((r) => canDecideRequest(user, r, users));
     },
-    [requests]
+    [requests, users]
   );
 
   const recentDecisionsBy = useCallback(
@@ -183,14 +252,17 @@ export function DemoProvider({ children }) {
   const outOnDay = useCallback(
     (iso, teamId = null) =>
       requests
-        .filter(
-          (r) =>
-            r.status === 'approved' &&
-            rangesOverlap(iso, iso, r.start, r.end) &&
-            (!teamId || userById(r.userId)?.team === teamId)
-        )
-        .map((r) => ({ ...r, user: userById(r.userId) })),
-    [requests]
+        .flatMap((r) =>
+          lineEntriesForRequest(r)
+            .filter(
+              (entry) =>
+                entry.status === 'approved' &&
+                rangesOverlap(iso, iso, entry.start, entry.end) &&
+                (!teamId || byId(users, entry.userId)?.team === teamId)
+            )
+            .map((entry) => ({ ...entry, user: byId(users, entry.userId) }))
+        ),
+    [requests, users]
   );
 
   // ---- mutations ----
@@ -209,16 +281,14 @@ export function DemoProvider({ children }) {
     (draft) => {
       const id = newId();
       setState((s) => {
-        const author = userById(s.activeUserId);
+        const author = byId(s.users, s.activeUserId);
         return {
           ...s,
           requests: [
             {
               id,
               userId: s.activeUserId,
-              type: draft.type,
-              start: draft.start,
-              end: draft.end,
+              lines: requestLines(draft).map((line) => ({ type: line.type, start: line.start, end: line.end })),
               status: 'pending',
               note: draft.note || '',
               decidedBy: null,
@@ -232,7 +302,7 @@ export function DemoProvider({ children }) {
             {
               id: `n${Date.now()}`,
               audience: { type: 'approvers', team: author?.team ?? null },
-              text: `${author?.name} submitted a ${ptoTypeById(draft.type)?.name} request for ${fmtShort(draft.start)}–${fmtShort(draft.end)}.`,
+              text: `${author?.name} submitted a ${requestNotice(draft)}.`,
               kind: 'submitted',
               createdAt: s.todayIso,
             },
@@ -254,12 +324,13 @@ export function DemoProvider({ children }) {
     }));
   }, []);
 
-  const decideRequest = useCallback((id, decision, byId, reason = null) => {
+  const decideRequest = useCallback((id, decision, deciderId, reason = null) => {
     setState((s) => {
       const target = s.requests.find((r) => r.id === id);
       if (!target) return s;
-      const deciderName = firstName(userById(byId)?.name);
-      const typeName = ptoTypeById(target.type)?.name;
+      const actor = byId(s.users, deciderId);
+      if (!canDecideRequest(actor, target, s.users)) return s;
+      const deciderName = firstName(actor?.name);
       const verb = decision === 'approved' ? 'approved' : 'denied';
       return {
         ...s,
@@ -268,7 +339,7 @@ export function DemoProvider({ children }) {
             ? {
                 ...r,
                 status: decision,
-                decidedBy: byId,
+                decidedBy: deciderId,
                 decidedAt: s.todayIso,
                 denialReason: decision === 'denied' ? reason : null,
               }
@@ -278,7 +349,7 @@ export function DemoProvider({ children }) {
           {
             id: `n${Date.now()}`,
             audience: { type: 'user', id: target.userId },
-            text: `Your ${typeName} request for ${fmtShort(target.start)}–${fmtShort(target.end)} was ${verb} by ${deciderName}.`,
+            text: `Your ${requestNotice(target)} was ${verb} by ${deciderName}.`,
             kind: decision,
             createdAt: s.todayIso,
           },
@@ -305,6 +376,30 @@ export function DemoProvider({ children }) {
     (ids, byId) => ids.forEach((id) => decideRequest(id, 'approved', byId)),
     [decideRequest]
   );
+
+  const setGrant = useCallback((userId, typeId, amount) => {
+    const nextAmount = Math.max(0, Number(amount) || 0);
+    setState((s) => ({
+      ...s,
+      grants: {
+        ...s.grants,
+        [userId]: {
+          ...(s.grants[userId] || {}),
+          [typeId]: nextAmount,
+        },
+      },
+    }));
+    return nextAmount;
+  }, []);
+
+  const setNormalDaysOff = useCallback((userId, days) => {
+    const nextDays = cleanNormalDays(days);
+    setState((s) => ({
+      ...s,
+      users: s.users.map((u) => (u.id === userId ? { ...u, normalDaysOff: nextDays } : u)),
+    }));
+    return nextDays;
+  }, []);
 
   // ---- notifications ----
   const visibleNotifications = useMemo(() => {
@@ -355,7 +450,7 @@ export function DemoProvider({ children }) {
 
   const value = {
     // data
-    users: USERS,
+    users,
     teams: TEAMS,
     ptoTypes: PTO_TYPES,
     holidays: HOLIDAYS_2026,
@@ -368,11 +463,14 @@ export function DemoProvider({ children }) {
     // selectors
     usedFor,
     balanceFor,
+    grantFor,
+    normalDaysOffFor,
     requestsForUser,
     teamMembers,
     pendingForApprover,
     recentDecisionsBy,
     outOnDay,
+    canDecideRequest: (user, request) => canDecideRequest(user, request, users),
     // mutations
     submitRequest,
     cancelRequest,
@@ -380,6 +478,8 @@ export function DemoProvider({ children }) {
     denyRequest,
     approveMany,
     undoDecision,
+    setGrant,
+    setNormalDaysOff,
     addNotification,
     // notifications
     notifications: visibleNotifications,

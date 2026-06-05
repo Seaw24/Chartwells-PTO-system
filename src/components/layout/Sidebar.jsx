@@ -58,7 +58,7 @@ export default function Sidebar({ collapsed, onToggle }) {
     canApprove(activeUser?.role) && { to: '/approvals', label: 'Approvals', icon: CheckSquare, badge: approvalsPending, showBadge: true, accent: true },
     canApprove(activeUser?.role) && { to: '/team', label: 'Team', icon: Users },
     isGodAdmin(activeUser?.role) && { to: '/reports', label: 'Reports', icon: BarChart3 },
-    isGodAdmin(activeUser?.role) && { to: '/settings', label: 'Settings', icon: Settings },
+    canApprove(activeUser?.role) && { to: '/settings', label: 'Settings', icon: Settings },
     { to: '/profile', label: 'My Profile', icon: User },
   ].filter(Boolean);
 

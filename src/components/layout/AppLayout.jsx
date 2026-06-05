@@ -47,9 +47,9 @@ export default function AppLayout() {
     { to: '/calendar', label: 'Calendar', icon: Calendar },
     { to: '/requests', label: 'Requests', icon: Mail },
     canApprove(activeUser?.role) && { to: '/approvals', label: 'Approvals', icon: CheckSquare, badge: approvalsCount },
+    canApprove(activeUser?.role) && { to: '/settings', label: 'Settings', icon: Settings },
     canApprove(activeUser?.role) && { to: '/team', label: 'Team', icon: Users },
     isGodAdmin(activeUser?.role) && { to: '/reports', label: 'Reports', icon: BarChart3 },
-    isGodAdmin(activeUser?.role) && { to: '/settings', label: 'Settings', icon: Settings },
     { to: '/profile', label: 'Profile', icon: User },
   ].filter(Boolean).slice(0, 5);
 

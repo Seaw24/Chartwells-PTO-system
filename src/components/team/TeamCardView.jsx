@@ -5,13 +5,13 @@
 import { useEffect, useState } from 'react';
 import { useDataSource } from '../../data/dataSource';
 import { useToday } from '../../data/today';
-import { PTO_TYPES, DEFAULT_BALANCES } from '../../utils/constants';
+import { PTO_TYPES } from '../../utils/constants';
 import { memberStatus } from './EmployeeProfile';
 import Avatar from '../ui/Avatar';
 import RolePill from '../ui/RolePill';
 
 export default function TeamCardView({ members, onSelect }) {
-  const { usedFor, getRequests, getHolidays } = useDataSource();
+  const { usedFor, grantFor, getRequests, getHolidays } = useDataSource();
   const todayIso = useToday();
   const [data, setData] = useState(null);
 
@@ -22,9 +22,11 @@ export default function TeamCardView({ members, onSelect }) {
       getRequests(),
       getHolidays(),
       Promise.all(members.flatMap((m) => PTO_TYPES.slice(0, 3).map((t) => usedFor(m.id, t.id)))),
-    ]).then(([requests, holidays, usedList]) => {
+      Promise.all(members.flatMap((m) => PTO_TYPES.slice(0, 3).map((t) => grantFor(m.id, t.id)))),
+    ]).then(([requests, holidays, usedList, grantList]) => {
       if (!alive) return;
       const usedByMemberType = {};
+      const grantByMemberType = {};
       let i = 0;
       members.forEach((m) => {
         usedByMemberType[m.id] = {};
@@ -32,7 +34,14 @@ export default function TeamCardView({ members, onSelect }) {
           usedByMemberType[m.id][t.id] = usedList[i++];
         });
       });
-      setData({ requests, holidays, usedByMemberType });
+      i = 0;
+      members.forEach((m) => {
+        grantByMemberType[m.id] = {};
+        PTO_TYPES.slice(0, 3).forEach((t) => {
+          grantByMemberType[m.id][t.id] = grantList[i++];
+        });
+      });
+      setData({ requests, holidays, usedByMemberType, grantByMemberType });
     });
     return () => { alive = false; };
   }, [members]);
@@ -64,7 +73,7 @@ export default function TeamCardView({ members, onSelect }) {
 
             <div className="mt-3 space-y-2">
               {PTO_TYPES.slice(0, 3).map((t) => {
-                const total = DEFAULT_BALANCES[t.id];
+                const total = data.grantByMemberType[m.id][t.id];
                 const used = data.usedByMemberType[m.id][t.id];
                 return (
                   <div key={t.id} className="flex items-center gap-2">

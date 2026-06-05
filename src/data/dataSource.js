@@ -27,13 +27,19 @@ import { useMockDataSource } from './mockDataSource';
  */
 
 /**
+ * One line item inside a stored PTO request.
+ * @typedef {Object} RequestLine
+ * @property {string} type             PTO type id
+ * @property {string} start            ISO date (inclusive)
+ * @property {string} end              ISO date (inclusive)
+ */
+
+/**
  * A PTO request. Mirrors the shape DemoContext produces today.
  * @typedef {Object} Request
  * @property {string} id
  * @property {string} userId           the employee the request belongs to
- * @property {string} type             PTO type id
- * @property {string} start            ISO date (inclusive)
- * @property {string} end              ISO date (inclusive)
+ * @property {RequestLine[]} lines     requested PTO line items
  * @property {RequestStatus} status
  * @property {string} note
  * @property {string|null} decidedBy   approver user id; null until decided
@@ -43,12 +49,18 @@ import { useMockDataSource } from './mockDataSource';
  */
 
 /**
+ * One line item inside a request draft submitted by a screen.
+ * @typedef {Object} RequestDraftLine
+ * @property {string} type             PTO type id
+ * @property {string} start            ISO date (inclusive)
+ * @property {string} end              ISO date (inclusive)
+ */
+
+/**
  * What a screen passes to submitRequest. The actor (who is submitting) is NOT here;
  * it comes from the session.
  * @typedef {Object} RequestDraft
- * @property {string} type
- * @property {string} start
- * @property {string} end
+ * @property {RequestDraftLine[]} lines
  * @property {string} [note]
  */
 
@@ -95,6 +107,10 @@ import { useMockDataSource } from './mockDataSource';
  *           Days left for that person and type (allotment minus used).
  * @property {(userId: string, typeId: string) => Promise<number>} usedFor
  *           Approved days of that type already used.
+ * @property {(userId: string, typeId: string) => Promise<number>} grantFor
+ *           Raw per-person yearly grant for that PTO type.
+ * @property {(userId: string) => Promise<number[]>} normalDaysOffFor
+ *           Weekday indices (0-6) that do not count as charged PTO for that person.
  * @property {() => Promise<User[]>} getUsers
  * @property {() => Promise<Team[]>} getTeams
  * @property {() => Promise<PtoType[]>} getPtoTypes
@@ -117,6 +133,10 @@ import { useMockDataSource } from './mockDataSource';
  *           Reason required. Returns the denied request.
  * @property {(ids: string[]) => Promise<BulkApproveResult>} approveMany
  *           Best-effort: approves what the caller may, reports the rest in `failed`.
+ * @property {(userId: string, typeId: string, amount: number) => Promise<number>} setGrant
+ *           Updates an existing per-person grant row and returns the saved amount.
+ * @property {(userId: string, days: number[]) => Promise<number[]>} setNormalDaysOff
+ *           Updates a person's normal days off and returns the saved set.
  * @property {(id: string) => Promise<Request>} undoDecision
  *           Returns the request, back to pending. Refuses unless the caller is
  *           authorized on it and it is within 24h. Records the reversal in the audit

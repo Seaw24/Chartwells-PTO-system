@@ -11,6 +11,7 @@
   import Button from '../components/ui/Button';
   import ConfirmDialog from '../components/ui/ConfirmDialog';
   import { toDate } from '../utils/dateHelpers';
+  import { requestStart } from '../utils/requestHelpers';
   import {useDataSource} from "../data/dataSource";
   import {useCurrentUser} from "../data/session";
 
@@ -54,7 +55,7 @@
           ? a.submittedAt < b.submittedAt
             ? 1
             : -1
-          : toDate(a.start) - toDate(b.start)
+          : toDate(requestStart(a)) - toDate(requestStart(b))
       );
       return filteredList;
     }, [all, tab, sort]);

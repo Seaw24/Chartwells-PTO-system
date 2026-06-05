@@ -2,8 +2,10 @@
 //   in focus at a time, so policy config never becomes a wall. Each panel fades in on
 //   switch. The persistent demo-note footer sets expectations honestly (edits are in-session).
 // References: Vercel project-settings layout; Stripe settings rail.
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Tag, CalendarHeart, CalendarOff, Users, UserCog, ShieldCheck } from 'lucide-react';
+import { useCurrentUser } from '../data/session';
+import { isGodAdmin } from '../utils/constants';
 import PtoTypesSettings from '../components/settings/PtoTypesSettings';
 import HolidaySettings from '../components/settings/HolidaySettings';
 import BlackoutSettings from '../components/settings/BlackoutSettings';
@@ -21,14 +23,19 @@ const TABS = [
 ];
 
 export default function Settings() {
-  const [tab, setTab] = useState('types');
-  const Active = TABS.find((t) => t.id === tab).Comp;
+  const activeUser = useCurrentUser();
+  const tabs = useMemo(() => (isGodAdmin(activeUser.role) ? TABS : TABS.filter((t) => t.id === 'people')), [activeUser.role]);
+  const [tab, setTab] = useState(() => (isGodAdmin(activeUser.role) ? 'types' : 'people'));
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
+  }, [tab, tabs]);
+  const Active = tabs.find((t) => t.id === tab).Comp;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[200px_1fr]">
       {/* Tab rail */}
       <nav className="flex gap-1.5 overflow-x-auto no-scrollbar lg:flex-col lg:overflow-visible">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active = t.id === tab;
           return (
             <button

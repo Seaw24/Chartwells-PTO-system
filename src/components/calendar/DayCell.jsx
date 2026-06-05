@@ -1,6 +1,7 @@
 import { format, isSameMonth, isSameDay } from 'date-fns';
 import { Plus } from 'lucide-react';
-import { toDate, toISO, rangesOverlap } from '../../utils/dateHelpers';
+import { toDate, toISO } from '../../utils/dateHelpers';
+import { requestOverlapsDay } from '../../utils/requestHelpers';
 import CalendarChip from './CalendarChip';
 
 // Design notes: A month-grid day. Weekends get a faint panel wash so the work week
@@ -16,7 +17,7 @@ export default function DayCell({ date, monthDate, todayIso, holiday, blackout, 
   const day = date.getDay();
   const isWeekend = day === 0 || day === 6;
   const iso = toISO(date);
-  const inHighlight = highlight && rangesOverlap(iso, iso, highlight.start, highlight.end);
+  const inHighlight = highlight && requestOverlapsDay(highlight, iso);
   const visible = entries.slice(0, MAX_VISIBLE);
   const overflow = entries.length - visible.length;
 
@@ -60,7 +61,7 @@ export default function DayCell({ date, monthDate, todayIso, holiday, blackout, 
 
       <div className="flex flex-col gap-0.5">
         {visible.map((r) => (
-          <CalendarChip key={r.id} request={r} onClick={onChipClick} highlighted={r.id === highlight?.id} />
+          <CalendarChip key={r.lineKey || r.id} request={r} onClick={onChipClick} highlighted={(r.requestId || r.id) === highlight?.id} />
         ))}
         {overflow > 0 && (
           <button

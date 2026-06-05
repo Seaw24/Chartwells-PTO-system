@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Check, X, Users, History } from 'lucide-react';
 import { useDataSource } from '../../data/dataSource';
 import { useToday } from '../../data/today';
-import { userById, firstName, teamById, ptoTypeById, DEFAULT_BALANCES } from '../../utils/constants';
-import { fmtRange, businessDays, relativeTime, toDate } from '../../utils/dateHelpers';
+import { userById, firstName, teamById, ptoTypeById } from '../../utils/constants';
+import { fmtRange, relativeTime, toDate } from '../../utils/dateHelpers';
 import { conflictsFor } from '../../utils/policyEngine';
+import { lineDays, requestDays, requestLines, requestRangeLabel, requestTypeIds, requestTypeLabel } from '../../utils/requestHelpers';
 import { differenceInCalendarDays } from 'date-fns';
 import Avatar from '../ui/Avatar';
 import PtoTypePill from '../ui/PtoTypePill';
@@ -16,7 +17,7 @@ import Button from '../ui/Button';
 //   an inline reason (required) with Ctrl/Cmd+Enter to confirm for fast triage.
 // References: HR approval queues (Charlie/BambooHR); "managers are low on time".
 export default function ApprovalCard({ request, onApprove, onDeny, selectable, selected, onToggleSelect, onOpenPerson, onOpenDetail }) {
-  const { balanceFor, getRequests, getUsers } = useDataSource();
+  const { balanceFor, grantFor, normalDaysOffFor, getRequests, getUsers } = useDataSource();
   const todayIso = useToday();
   const [data, setData] = useState(null);
   const [denying, setDenying] = useState(false);
@@ -24,23 +25,34 @@ export default function ApprovalCard({ request, onApprove, onDeny, selectable, s
 
   useEffect(() => {
     let alive = true;
+    const typeIds = requestTypeIds(request);
     Promise.all([
-      balanceFor(request.userId, request.type),
+      Promise.all(typeIds.map((typeId) => balanceFor(request.userId, typeId))),
+      Promise.all(typeIds.map((typeId) => grantFor(request.userId, typeId))),
+      normalDaysOffFor(request.userId),
       getRequests(),
       getUsers(),
-    ]).then(([balance, requests, users]) => {
-      if (alive) setData({ balance, requests, users });
+    ]).then(([balanceList, grantList, normalDaysOff, requests, users]) => {
+      if (!alive) return;
+      const balances = {};
+      const grants = {};
+      typeIds.forEach((typeId, i) => {
+        balances[typeId] = balanceList[i];
+        grants[typeId] = grantList[i];
+      });
+      setData({ balances, grants, normalDaysOff, requests, users });
     });
     return () => { alive = false; };
   }, [request.id]);
 
   const employee = userById(request.userId);
-  const type = ptoTypeById(request.type);
-  const days = businessDays(request.start, request.end);
+  const lines = requestLines(request);
+  const typeIds = requestTypeIds(request);
   if (data === null) return null;
-  const { balance, requests, users } = data;
+  const { balances, grants, normalDaysOff, requests, users } = data;
+  const days = requestDays(request, normalDaysOff);
   const conflicts = conflictsFor({
-    draft: { start: request.start, end: request.end },
+    draft: request,
     requests,
     users,
     selfId: request.userId,
@@ -58,7 +70,7 @@ export default function ApprovalCard({ request, onApprove, onDeny, selectable, s
       onKeyDown={(e) => {
         if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpenDetail?.(request); }
       }}
-      aria-label={`Open ${employee?.name}'s ${type.name} request`}
+      aria-label={`Open ${employee?.name}'s ${requestTypeLabel(request)} request`}
       className="cursor-pointer rounded-card border border-line bg-card p-5 shadow-card transition-shadow duration-[180ms] hover:shadow-lift"
     >
       <div className="flex items-start gap-3">
@@ -100,17 +112,37 @@ export default function ApprovalCard({ request, onApprove, onDeny, selectable, s
             </span>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            <PtoTypePill typeId={request.type} size="sm" />
-            <span className="font-medium text-ink">{fmtRange(request.start, request.end)}</span>
-            <span className="text-ink-mute tabular">· {days} day{days === 1 ? '' : 's'}</span>
+          <div className="mt-3 space-y-1.5 text-sm">
+            {lines.length === 1 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <PtoTypePill typeId={lines[0].type} size="sm" />
+                <span className="font-medium text-ink">{fmtRange(lines[0].start, lines[0].end)}</span>
+                <span className="text-ink-mute tabular">· {days} day{days === 1 ? '' : 's'}</span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-ink">{requestRangeLabel(request)}</p>
+                {lines.map((line, index) => (
+                  <div key={`${line.type}-${line.start}-${index}`} className="flex flex-wrap items-center gap-2">
+                    <PtoTypePill typeId={line.type} size="xs" />
+                    <span className="font-medium text-ink">{fmtRange(line.start, line.end)}</span>
+                    <span className="text-ink-mute tabular">· {lineDays(line, normalDaysOff)}d</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
           {/* Balance + conflicts */}
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <div className="rounded-btn bg-panel px-3 py-2 text-xs">
               <span className="text-ink-mute">Balance: </span>
-              <b className="text-ink">{firstName(employee?.name)} has {balance}/{DEFAULT_BALANCES[request.type]} {type.name.toLowerCase()} left</b>
+              <b className="text-ink">
+                {typeIds.map((typeId) => {
+                  const type = ptoTypeById(typeId);
+                  return `${balances[typeId]}/${grants[typeId]} ${type?.name.toLowerCase()}`;
+                }).join(', ')} left for {firstName(employee?.name)}
+              </b>
             </div>
             <div className={`rounded-btn px-3 py-2 text-xs ${conflicts.length ? 'bg-warning-soft text-ink-soft' : 'bg-panel text-ink-mute'}`}>
               <span className="flex items-center gap-1.5">

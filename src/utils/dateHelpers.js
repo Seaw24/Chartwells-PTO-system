@@ -2,7 +2,6 @@ import {
   parseISO,
   format,
   eachDayOfInterval,
-  isWeekend,
   differenceInCalendarDays,
   formatDistanceToNowStrict,
   isWithinInterval,
@@ -34,13 +33,14 @@ export function fmtRange(startIso, endIso) {
   return `${left} – ${right}`;
 }
 
-// Business days in an inclusive range (weekends excluded). Holidays still count as PTO here.
-export function businessDays(startIso, endIso) {
+// Charged PTO days in an inclusive range. Normal days off are excluded; holidays still count.
+export function businessDays(startIso, endIso, normalDaysOff = [0, 6]) {
   if (!startIso || !endIso) return 0;
   const start = toDate(startIso);
   const end = toDate(endIso);
   if (end < start) return 0;
-  return eachDayOfInterval({ start, end }).filter((d) => !isWeekend(d)).length;
+  const daysOff = new Set(normalDaysOff);
+  return eachDayOfInterval({ start, end }).filter((d) => !daysOff.has(d.getDay())).length;
 }
 
 export const calendarDays = (startIso, endIso) =>

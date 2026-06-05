@@ -22,12 +22,18 @@ import { canApprove, isGodAdmin, firstName, ptoTypeById, TEAMS } from '../utils/
 import {
   toDate,
   toISO,
-  fmtMedium,
   fmtShort,
   relativeTime,
-  rangesOverlap,
   fmtLong,
 } from '../utils/dateHelpers';
+import {
+  requestEnd,
+  requestLines,
+  requestOverlapsRange,
+  requestRangeLabel,
+  requestStart,
+  requestTypeLabel,
+} from '../utils/requestHelpers';
 import BalanceCards from '../components/requests/BalanceCards';
 import StatusChip from '../components/ui/StatusChip';
 import PtoTypePill from '../components/ui/PtoTypePill';
@@ -112,8 +118,8 @@ export default function Dashboard() {
   const greeting = getGreeting();
   const myRequests = data?.myRequests ?? [];
   const upcoming = myRequests
-    .filter((r) => r.status === 'approved' && toDate(r.end) >= toDate(todayIso))
-    .sort((a, b) => (a.start > b.start ? 1 : -1))
+    .filter((r) => r.status === 'approved' && toDate(requestEnd(r)) >= toDate(todayIso))
+    .sort((a, b) => (requestStart(a) > requestStart(b) ? 1 : -1))
     .slice(0, 3);
   const activity = [...myRequests]
     .sort((a, b) => ((a.decidedAt || a.submittedAt) < (b.decidedAt || b.submittedAt) ? 1 : -1))
@@ -171,21 +177,26 @@ export default function Dashboard() {
               />
             ) : (
               <ul className="divide-y divide-line-soft">
-                {upcoming.map((r) => (
-                  <li key={r.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                    <span
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
-                      style={{ background: `color-mix(in oklch, ${ptoTypeById(r.type)?.color} 12%, var(--c-card))`, color: ptoTypeById(r.type)?.color }}
-                    >
-                      <PtoTypeIcon typeId={r.type} size={16} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-ink">{fmtMedium(r.start)}{r.start !== r.end ? ` – ${fmtShort(r.end)}` : ''}</p>
-                      <p className="text-xs text-ink-mute">{ptoTypeById(r.type)?.name}</p>
-                    </div>
-                    <StatusChip status={r.status} size="xs" />
-                  </li>
-                ))}
+                {upcoming.map((r) => {
+                  const firstLine = requestLines(r)[0];
+                  const type = ptoTypeById(firstLine?.type);
+                  const color = type?.color || 'var(--c-ink-mute)';
+                  return (
+                    <li key={r.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                      <span
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
+                        style={{ background: `color-mix(in oklch, ${color} 12%, var(--c-card))`, color }}
+                      >
+                        <PtoTypeIcon typeId={firstLine?.type} size={16} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-ink">{requestRangeLabel(r)}</p>
+                        <p className="text-xs text-ink-mute">{requestTypeLabel(r)}</p>
+                      </div>
+                      <StatusChip status={r.status} size="xs" />
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Panel>
@@ -197,7 +208,10 @@ export default function Dashboard() {
               <ul className="space-y-3">
                 {activity.map((r) => (
                   <li key={r.id} className="flex items-start gap-3 text-sm">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: ptoTypeById(r.type)?.color }} />
+                    <span
+                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ background: ptoTypeById(requestLines(r)[0]?.type)?.color || 'var(--c-ink-mute)' }}
+                    />
                     <p className="flex-1 text-ink-soft">
                       {activityText(r, data.users)}
                       <span className="ml-1.5 text-[11px] text-ink-mute">{relativeTime(r.decidedAt || r.submittedAt)}</span>
@@ -246,7 +260,7 @@ function AdminPanels({ activeUser, todayIso, requests, pending, members, balance
   const wkStart = toISO(startOfWeek(toDate(todayIso)));
   const wkEnd = toISO(endOfWeek(toDate(todayIso)));
   const outThisWeek = visibleMembers.filter((m) =>
-    requests.some((r) => r.userId === m.id && r.status === 'approved' && rangesOverlap(r.start, r.end, wkStart, wkEnd))
+    requests.some((r) => r.userId === m.id && r.status === 'approved' && requestOverlapsRange(r, wkStart, wkEnd))
   );
 
   return (
@@ -442,8 +456,8 @@ function Panel({ title, icon: Icon, action, compact, children }) {
 }
 
 function activityText(r, users) {
-  const type = ptoTypeById(r.type)?.name;
-  const range = `${fmtShort(r.start)}${r.start !== r.end ? `–${fmtShort(r.end)}` : ''}`;
+  const type = requestTypeLabel(r);
+  const range = requestRangeLabel(r);
   if (r.status === 'approved') {
     const decider = users.find((u) => u.id === r.decidedBy);
     const by = decider && decider.id !== r.userId ? <> by {firstName(decider.name)}</> : null;

@@ -5,13 +5,12 @@ import { useDataSource } from '../data/dataSource';
 import {
   PTO_TYPES,
   TEAMS,
-  DEFAULT_BALANCES,
-  USERS,
   userById,
   teamById,
   ptoTypeById,
 } from '../utils/constants';
-import { businessDays, toDate } from '../utils/dateHelpers';
+import { toDate } from '../utils/dateHelpers';
+import { lineDays, lineEntriesForRequest, requestLines } from '../utils/requestHelpers';
 import Button from '../components/ui/Button';
 import UsageByTypeChart from '../components/reports/UsageByTypeChart';
 import TeamComparisonChart from '../components/reports/TeamComparisonChart';
@@ -22,76 +21,98 @@ import ApprovalTurnaroundChart from '../components/reports/ApprovalTurnaroundCha
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function Reports() {
-  const { getRequests, usedFor } = useDataSource();
+  const { getRequests, getUsers, usedFor, grantFor, normalDaysOffFor } = useDataSource();
   const [data, setData] = useState(null);
   const [teamFilter, setTeamFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      getRequests(),
-      Promise.all(USERS.flatMap((u) => PTO_TYPES.map((t) => usedFor(u.id, t.id)))),
-    ]).then(([requests, usedList]) => {
+    async function load() {
+      const [requests, users] = await Promise.all([getRequests(), getUsers()]);
+      const [usedList, grantList, daysOffList] = await Promise.all([
+        Promise.all(users.flatMap((u) => PTO_TYPES.map((t) => usedFor(u.id, t.id)))),
+        Promise.all(users.flatMap((u) => PTO_TYPES.map((t) => grantFor(u.id, t.id)))),
+        Promise.all(users.map((u) => normalDaysOffFor(u.id))),
+      ]);
       if (!alive) return;
       const usedByUserType = {};
+      const grantByUserType = {};
       let i = 0;
-      USERS.forEach((u) => {
+      users.forEach((u) => {
         usedByUserType[u.id] = {};
+        grantByUserType[u.id] = {};
         PTO_TYPES.forEach((t) => {
           usedByUserType[u.id][t.id] = usedList[i++];
         });
       });
-      setData({ requests, usedByUserType });
-    });
+      i = 0;
+      users.forEach((u) => {
+        PTO_TYPES.forEach((t) => {
+          grantByUserType[u.id][t.id] = grantList[i++];
+        });
+      });
+      const normalDaysOffByUser = {};
+      users.forEach((u, index) => { normalDaysOffByUser[u.id] = daysOffList[index]; });
+      setData({ requests, users, usedByUserType, grantByUserType, normalDaysOffByUser });
+    }
+    load();
     return () => { alive = false; };
   }, []);
 
   const requests = data?.requests ?? [];
+  const users = data?.users ?? [];
 
   const filtered = useMemo(
     () =>
       requests.filter((r) => {
         if (teamFilter !== 'all' && userById(r.userId)?.team !== teamFilter) return false;
-        if (typeFilter !== 'all' && r.type !== typeFilter) return false;
+        if (typeFilter !== 'all' && !requestLines(r).some((line) => line.type === typeFilter)) return false;
         return true;
       }),
     [requests, teamFilter, typeFilter]
   );
-  const approved = filtered.filter((r) => r.status === 'approved');
+  const filteredEntries = useMemo(
+    () =>
+      filtered
+        .flatMap(lineEntriesForRequest)
+        .filter((entry) => typeFilter === 'all' || entry.type === typeFilter),
+    [filtered, typeFilter]
+  );
+  const approved = filteredEntries.filter((r) => r.status === 'approved');
 
   // Monthly usage stacked by type.
   const monthlyUsage = useMemo(() => {
     const rows = MONTHS.map((m) => ({ month: m, ...Object.fromEntries(PTO_TYPES.map((t) => [t.name, 0])) }));
     approved.forEach((r) => {
       const mi = toDate(r.start).getMonth();
-      rows[mi][ptoTypeById(r.type).name] += businessDays(r.start, r.end);
+      rows[mi][ptoTypeById(r.type).name] += lineDays(r, data.normalDaysOffByUser[r.userId]);
     });
     return rows;
-  }, [approved]);
+  }, [approved, data]);
 
   // Avg days taken per team member.
   const teamComparison = useMemo(
     () =>
       TEAMS.map((t) => {
-        const members = USERS.filter((u) => u.team === t.id);
+        const members = users.filter((u) => u.team === t.id);
         const total = approved
           .filter((r) => userById(r.userId)?.team === t.id)
-          .reduce((s, r) => s + businessDays(r.start, r.end), 0);
+          .reduce((s, r) => s + lineDays(r, data.normalDaysOffByUser[r.userId]), 0);
         return { team: t.name, avgDays: members.length ? +(total / members.length).toFixed(1) : 0 };
       }),
-    [approved]
+    [approved, data, users]
   );
 
   // Unused balance liability by type (whole company, ignores filters by design).
   const { liability, liabilityTotal } = useMemo(() => {
     if (!data) return { liability: [], liabilityTotal: 0 };
     const rows = PTO_TYPES.map((t) => {
-      const remaining = USERS.reduce((s, u) => s + (DEFAULT_BALANCES[t.id] - data.usedByUserType[u.id][t.id]), 0);
+      const remaining = users.reduce((s, u) => s + (data.grantByUserType[u.id][t.id] - data.usedByUserType[u.id][t.id]), 0);
       return { name: t.name, value: remaining, color: t.color };
     });
     return { liability: rows, liabilityTotal: rows.reduce((s, d) => s + d.value, 0) };
-  }, [data]);
+  }, [data, users]);
 
   // Approval turnaround by week (chronological).
   const turnaround = useMemo(() => {
@@ -113,13 +134,13 @@ export default function Reports() {
 
   function exportCSV() {
     const header = ['Employee', 'Team', 'Type', 'Start', 'End', 'Business Days', 'Status', 'Decided By'];
-    const rows = filtered.map((r) => [
+    const rows = filteredEntries.map((r) => [
       userById(r.userId)?.name,
       teamById(userById(r.userId)?.team)?.name || '',
       ptoTypeById(r.type)?.name,
       r.start,
       r.end,
-      businessDays(r.start, r.end),
+      lineDays(r, data.normalDaysOffByUser[r.userId]),
       r.status,
       userById(r.decidedBy)?.name || '',
     ]);

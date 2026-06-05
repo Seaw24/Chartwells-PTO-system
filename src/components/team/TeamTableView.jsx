@@ -5,8 +5,8 @@
 import { useEffect, useState } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useDataSource } from '../../data/dataSource';
-import { DEFAULT_BALANCES, ROLES, teamById } from '../../utils/constants';
-import { businessDays } from '../../utils/dateHelpers';
+import { ROLES, teamById } from '../../utils/constants';
+import { requestDays } from '../../utils/requestHelpers';
 import Avatar from '../ui/Avatar';
 
 const COLS = [
@@ -21,7 +21,7 @@ const COLS = [
 ];
 
 export default function TeamTableView({ members, onSelect }) {
-  const { balanceFor, requestsForUser } = useDataSource();
+  const { balanceFor, normalDaysOffFor, requestsForUser } = useDataSource();
   const [sort, setSort] = useState({ key: 'name', dir: 1 });
   const [data, setData] = useState(null);
 
@@ -36,7 +36,8 @@ export default function TeamTableView({ members, onSelect }) {
           balanceFor(m.id, 'wellness'),
           balanceFor(m.id, 'floating'),
           requestsForUser(m.id),
-        ]).then(([vacation, sick, wellness, floating, requests]) => ({
+          normalDaysOffFor(m.id),
+        ]).then(([vacation, sick, wellness, floating, requests, normalDaysOff]) => ({
           id: m.id,
           vacation,
           sick,
@@ -44,7 +45,7 @@ export default function TeamTableView({ members, onSelect }) {
           floating,
           ytd: requests
             .filter((r) => r.status === 'approved')
-            .reduce((s, r) => s + businessDays(r.start, r.end), 0),
+            .reduce((s, r) => s + requestDays(r, normalDaysOff), 0),
         }))
       )
     ).then((rows) => {
