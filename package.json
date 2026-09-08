@@ -4,11 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "node scripts/run-vite.mjs --dev",
+    "build": "node scripts/run-vite.mjs",
+    "preview": "node scripts/run-vite.mjs --preview",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check-source.mjs",
+    "test:fixture": "node tests/fixture-server.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "@tanstack/react-query": "^5.102.8",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.456.0",
     "react": "^18.3.1",
@@ -17,11 +22,21 @@
     "recharts": "^2.13.3"
   },
   "devDependencies": {
+    "@babel/generator": "^8.0.0",
+    "@babel/parser": "^8.0.4",
+    "@babel/traverse": "^8.0.4",
+    "@babel/types": "^8.0.4",
+    "@electric-sql/pglite": "^0.5.8",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "playwright": "^1.60.0",
     "postcss": "^8.4.49",
+    "prettier": "^3.9.6",
     "tailwindcss": "^3.4.15",
     "vite": "^5.4.11"
-  }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.19.0"
 }

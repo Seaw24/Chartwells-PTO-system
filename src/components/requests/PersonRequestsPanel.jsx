@@ -1,256 +1,361 @@
-import { useEffect, useMemo, useState } from 'react';
-import { differenceInCalendarDays, format } from 'date-fns';
-import { Check, X, Ban, Clock } from 'lucide-react';
-import { useDataSource } from '../../data/dataSource';
-import { PTO_TYPES, ptoTypeById, userById, teamById } from '../../utils/constants';
-import { fmtRange, toDate } from '../../utils/dateHelpers';
-import {
-  lineEntriesForRequest,
-  requestDays,
-  requestLines,
-  requestRangeLabel,
-  requestStart,
-  requestTypeLabel,
-} from '../../utils/requestHelpers';
-import Modal from '../ui/Modal';
-import Avatar from '../ui/Avatar';
-import RolePill from '../ui/RolePill';
-import StatusChip from '../ui/StatusChip';
-import PtoTypeIcon from '../ui/PtoTypeIcon';
-import EmptyState from '../ui/EmptyState';
-import { CalendarX } from 'lucide-react';
-
-// Design notes: The Outlook-style "click a person, see everything they've requested" view
-//   an approver asked for. Top: a horizontal year track placing every request by date so
-//   you read at a glance when this person is off and how the year clusters; lanes stack to
-//   avoid overlap. Below: a horizontal scroll of cards for every request, ALL statuses
-//   (approved solid, pending dashed, denied/cancelled muted) so context isn't hidden.
-//   Same colour=type / pattern=status language as the calendar, so nothing new to learn.
-// References: Outlook "scheduling assistant" person view; Float single-resource timeline.
-
-const STATUS_ICON = { approved: Check, pending: Clock, denied: X, cancelled: Ban };
-const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-
-export default function PersonRequestsPanel({ userId, open, onClose, onOpenRequest }) {
-  const { requestsForUser, balanceFor, grantFor, normalDaysOffFor } = useDataSource();
-  const [data, setData] = useState(null);
-  const member = userById(userId);
-
-  useEffect(() => {
-    let alive = true;
-    if (!userId) {
-      setData(null);
-      return () => { alive = false; };
-    }
-    setData(null);
-    Promise.all([
-      requestsForUser(userId),
-      Promise.all(PTO_TYPES.map((t) => balanceFor(userId, t.id))),
-      Promise.all(PTO_TYPES.map((t) => grantFor(userId, t.id))),
-      normalDaysOffFor(userId),
-    ]).then(([requests, balances, grants, normalDaysOff]) => {
-      if (!alive) return;
-      const balanceByType = {};
-      const grantByType = {};
-      PTO_TYPES.forEach((t, i) => {
-        balanceByType[t.id] = balances[i];
-        grantByType[t.id] = grants[i];
-      });
-      setData({ requests, balanceByType, grantByType, normalDaysOff });
-    });
-    return () => { alive = false; };
-  }, [userId]);
-
-  const requests = data?.requests ?? [];
-  const lineEntries = useMemo(() => requests.flatMap(lineEntriesForRequest), [requests]);
-
-  // Pick the year with the most activity for the timeline (seed data is 2026).
-  const year = useMemo(() => {
-    if (!requests.length) return new Date().getFullYear();
-    const counts = {};
-    lineEntries.forEach((r) => { const y = toDate(r.start).getFullYear(); counts[y] = (counts[y] || 0) + 1; });
-    return Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
-  }, [lineEntries, requests.length]);
-
-  // Position each in-year request on a horizontal track, packing into lanes so overlapping
-  // ranges don't collide.
-  const { lanes, laneCount } = useMemo(() => {
-    const yStart = new Date(year, 0, 1);
-    const yDays = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
-    const inYear = lineEntries
-      .filter((r) => toDate(r.start).getFullYear() === year || toDate(r.end).getFullYear() === year)
-      .map((r) => {
-        const s = Math.max(0, differenceInCalendarDays(toDate(r.start), yStart));
-        const e = Math.min(yDays - 1, differenceInCalendarDays(toDate(r.end), yStart));
-        return { ...r, l: (s / yDays) * 100, w: ((e - s + 1) / yDays) * 100, s, e };
-      })
-      .sort((a, b) => a.s - b.s);
-
-    const laneEnds = []; // last day index occupied per lane
-    const placed = inYear.map((r) => {
-      let lane = laneEnds.findIndex((end) => r.s > end);
-      if (lane === -1) { lane = laneEnds.length; laneEnds.push(r.e); }
-      else laneEnds[lane] = r.e;
-      return { ...r, lane };
-    });
-    return { lanes: placed, laneCount: Math.max(laneEnds.length, 1) };
-  }, [lineEntries, year]);
-
-  const sorted = useMemo(
-    () => [...requests].sort((a, b) => (requestStart(a) < requestStart(b) ? -1 : 1)),
-    [requests]
+import { useResource } from "../../hooks/useResource.jsx";
+import { Check as Vendor_Check } from "lucide-react";
+import { Clock as Vendor_Clock } from "lucide-react";
+import { X as Vendor_X } from "lucide-react";
+import { Ban as Vendor_Ban } from "lucide-react";
+import { useCatalog } from "../../context/CatalogContext.jsx";
+import { useDataSource } from "../../data/dataSource.jsx";
+import React from "react";
+import { lineEntriesForRequest } from "../../utils/requestHelpers.jsx";
+import { toDateLocal } from "../../utils/dateHelpers.jsx";
+import { differenceInCalendarDays as Vendor_differenceInCalendarDays } from "date-fns";
+import { requestStart } from "../../utils/requestHelpers.jsx";
+import { Modal } from "../ui/Modal.jsx";
+import { Avatar } from "../ui/Avatar.jsx";
+import { UserTeams } from "../../utils/organization.jsx";
+import { formatDateRange } from "../../utils/dateHelpers.jsx";
+import { EmptyState } from "../ui/EmptyState.jsx";
+import { CalendarX as Vendor_CalendarX } from "lucide-react";
+import { requestLines } from "../../utils/requestHelpers.jsx";
+import { requestDays } from "../../utils/requestHelpers.jsx";
+import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
+import { StatusChip } from "./RequestDetailModal.jsx";
+import { requestTypeLabel } from "../../utils/requestHelpers.jsx";
+import { requestRangeLabel } from "../../utils/requestHelpers.jsx";
+export const $E = {
+  approved: Vendor_Check,
+  pending: Vendor_Clock,
+  denied: Vendor_X,
+  cancelled: Vendor_Ban,
+};
+export const Hp = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+export function PersonRequestsPanel({
+  userId: userId,
+  open: open,
+  onClose: onClose,
+  onOpenRequest: onOpenRequest,
+}) {
+  const {
+      ptoTypes: ptoTypes,
+      ptoTypeById: ptoTypeById,
+      userById: userById,
+    } = useCatalog(),
+    {
+      requestsForUser: requestsForUser,
+      balanceFor: balanceFor,
+      grantFor: grantFor,
+      normalDaysOffFor: normalDaysOffFor,
+    } = useDataSource(),
+    _unused = null;
+  const { data: d = null } = useResource(
+    ["person-history", userId, ptoTypes.map((type) => type.id)],
+    async () => {
+      const [requests, normalDaysOff, rows] = await Promise.all([
+        requestsForUser(userId),
+        normalDaysOffFor(userId),
+        Promise.all(
+          ptoTypes.map(async (type) => ({
+            type: type.id,
+            balance: await balanceFor(userId, type.id),
+            grant: await grantFor(userId, type.id),
+          })),
+        ),
+      ]);
+      return {
+        userId,
+        requests,
+        normalDaysOff,
+        balanceByType: Object.fromEntries(
+          rows.map((row) => [row.type, row.balance]),
+        ),
+        grantByType: Object.fromEntries(
+          rows.map((row) => [row.type, row.grant]),
+        ),
+      };
+    },
+    open && !!userId,
   );
-
-  if (!member || data === null) return null;
-
-  return (
+  void 0;
+  const p = userById(d?.userId);
+  const y = (d == null ? void 0 : d.requests) ?? [],
+    g = React.useMemo(() => y.flatMap(lineEntriesForRequest), [y]),
+    k = React.useMemo(() => {
+      if (!y.length) return new Date().getFullYear();
+      const b = {};
+      return (
+        g.forEach((N) => {
+          const _ = toDateLocal(N.start).getFullYear();
+          b[_] = (b[_] || 0) + 1;
+        }),
+        Number(Object.entries(b).sort((N, _) => _[1] - N[1])[0][0])
+      );
+    }, [g, y.length]),
+    { lanes: lanes, laneCount: laneCount } = React.useMemo(() => {
+      const b = new Date(k, 0, 1),
+        N = k % 4 === 0 && (k % 100 !== 0 || k % 400 === 0) ? 366 : 365,
+        _ = g
+          .filter(
+            (R) =>
+              toDateLocal(R.start).getFullYear() === k ||
+              toDateLocal(R.end).getFullYear() === k,
+          )
+          .map((R) => {
+            const E = Math.max(
+                0,
+                Vendor_differenceInCalendarDays(toDateLocal(R.start), b),
+              ),
+              T = Math.min(
+                N - 1,
+                Vendor_differenceInCalendarDays(toDateLocal(R.end), b),
+              );
+            return {
+              ...R,
+              l: (E / N) * 100,
+              w: ((T - E + 1) / N) * 100,
+              s: E,
+              e: T,
+            };
+          })
+          .sort((R, E) => R.s - E.s),
+        j = [];
+      return {
+        lanes: _.map((R) => {
+          let E = j.findIndex((T) => R.s > T);
+          return (
+            E === -1 ? ((E = j.length), j.push(R.e)) : (j[E] = R.e),
+            {
+              ...R,
+              lane: E,
+            }
+          );
+        }),
+        laneCount: Math.max(j.length, 1),
+      };
+    }, [g, k]),
+    x = React.useMemo(
+      () => [...y].sort((b, N) => (requestStart(b) < requestStart(N) ? -1 : 1)),
+      [y],
+    );
+  return !p || d === null || (userId && d.userId !== userId) ? null : (
     <Modal open={open} onClose={onClose} title="Time-off history" size="xl">
       <div className="space-y-5">
-        {/* Identity + balances */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Avatar name={member.name} id={member.id} size="lg" />
+            <Avatar name={p.name} id={p.id} size="lg" />
             <div>
-              <p className="text-lg font-bold text-ink">{member.name}</p>
-              <div className="mt-1 flex items-center gap-2">
-                <RolePill role={member.role} size="xs" />
-                <span className="text-xs text-ink-mute">{teamById(member.team)?.name || 'All teams'}</span>
+              <p className="text-lg font-bold text-ink">{p.name}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <UserTeams user={p} variant="inline" />
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {PTO_TYPES.map((t) => {
-              const total = data.grantByType[t.id];
-              const left = data.balanceByType[t.id];
+            {ptoTypes.map((b) => {
+              const N = d.grantByType[b.id],
+                _ = d.balanceByType[b.id];
               return (
                 <span
-                  key={t.id}
                   className="flex items-center gap-1.5 rounded-chip border border-line bg-card px-2 py-1 text-[11px] font-medium text-ink-soft"
-                  title={`${t.name}: ${left} of ${total} left`}
+                  title={`${b.name}: ${_} of ${N} left`}
+                  key={b.id}
                 >
-                  <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />
-                  <span className="font-mono tabular text-ink">{left}</span>
-                  <span className="text-ink-mute">/{total}</span>
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      background: b.color,
+                    }}
+                  />
+                  <span className="font-mono tabular text-ink">{_}</span>
+                  <span className="text-ink-mute">
+                    {"/"}
+                    {N}
+                  </span>
                 </span>
               );
             })}
           </div>
         </div>
-
-        {/* Horizontal year timeline */}
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <p className="text-xs font-bold uppercase tracking-wide text-ink-mute">{year} at a glance</p>
-            <span className="text-[11px] text-ink-mute">solid = approved · dashed = pending</span>
+            <p className="text-xs font-bold uppercase tracking-wide text-ink-mute">
+              {k}
+              {" at a glance"}
+            </p>
+            <span className="text-[11px] text-ink-mute">
+              {"solid = approved · dashed = pending"}
+            </span>
           </div>
           <div className="overflow-x-auto scrollbar-slim rounded-card border border-line bg-card p-3">
             <div className="min-w-[560px]">
-              {/* month grid + labels */}
-              <div className="relative" style={{ height: `${laneCount * 26 + 8}px` }}>
+              <div
+                className="relative"
+                style={{
+                  height: `${laneCount * 26 + 8}px`,
+                }}
+              >
                 <div className="absolute inset-0 flex">
-                  {MONTHS.map((m, i) => (
-                    <div key={i} className="flex-1 border-l border-line-soft first:border-l-0" />
+                  {Hp.map((b, N) => (
+                    <div
+                      className="flex-1 border-l border-line-soft first:border-l-0"
+                      key={N}
+                    />
                   ))}
                 </div>
                 {lanes.length === 0 && (
-                  <p className="absolute inset-0 grid place-items-center text-xs text-ink-mute">No time off recorded in {year}.</p>
+                  <p className="absolute inset-0 grid place-items-center text-xs text-ink-mute">
+                    {"No time off recorded in "}
+                    {k}
+                    {"."}
+                  </p>
                 )}
-                {lanes.map((r) => {
-                  const type = ptoTypeById(r.type);
-                  const decided = r.status === 'denied' || r.status === 'cancelled';
-                  const pending = r.status === 'pending';
-                  const Icon = STATUS_ICON[r.status];
+                {lanes.map((b) => {
+                  const N = ptoTypeById(b.type),
+                    _ = b.status === "denied" || b.status === "cancelled",
+                    j = b.status === "pending",
+                    S = $E[b.status];
                   return (
                     <button
                       type="button"
-                      key={r.lineKey || r.id}
-                      onClick={() => onOpenRequest?.(r.requestId || r.id)}
+                      onClick={() =>
+                        onOpenRequest == null
+                          ? void 0
+                          : onOpenRequest(b.requestId || b.id)
+                      }
                       className="absolute flex h-[22px] items-center gap-1 overflow-hidden rounded-chip px-1.5 text-[10px] font-semibold transition-shadow hover:shadow-lift"
                       style={{
-                        top: `${r.lane * 26 + 2}px`,
-                        left: `${r.l}%`,
-                        width: `calc(${r.w}% - 2px)`,
-                        minWidth: '16px',
-                        color: decided ? 'var(--c-ink-mute)' : `color-mix(in oklch, ${type.color} 72%, var(--c-ink))`,
-                        background: decided
-                          ? 'var(--c-panel)'
-                          : `color-mix(in oklch, ${type.color} ${pending ? 12 : 22}%, var(--c-card))`,
-                        border: pending
-                          ? `1px dashed color-mix(in oklch, ${type.color} 55%, transparent)`
-                          : decided
-                          ? '1px solid var(--c-line)'
-                          : `1px solid color-mix(in oklch, ${type.color} 32%, transparent)`,
+                        top: `${b.lane * 26 + 2}px`,
+                        left: `${b.l}%`,
+                        width: `calc(${b.w}% - 2px)`,
+                        minWidth: "16px",
+                        color: _
+                          ? "var(--c-ink-mute)"
+                          : `color-mix(in oklch, ${N.color} 72%, var(--c-ink))`,
+                        background: _
+                          ? "var(--c-panel)"
+                          : `color-mix(in oklch, ${N.color} ${j ? 12 : 22}%, var(--c-card))`,
+                        border: j
+                          ? `1px dashed color-mix(in oklch, ${N.color} 55%, transparent)`
+                          : _
+                            ? "1px solid var(--c-line)"
+                            : `1px solid color-mix(in oklch, ${N.color} 32%, transparent)`,
                       }}
-                      title={`${type.name} · ${fmtRange(r.start, r.end)} · ${r.status}`}
+                      title={`${N.name} · ${formatDateRange(b.start, b.end)} · ${b.status}`}
+                      key={b.lineKey || b.id}
                     >
-                      <Icon size={10} className="shrink-0" strokeWidth={2.5} />
-                      <span className="truncate">{type.name}</span>
+                      <S size={10} className="shrink-0" strokeWidth={2.5} />
+                      <span className="truncate">{N.name}</span>
                     </button>
                   );
                 })}
               </div>
-              {/* month labels */}
               <div className="mt-1 flex border-t border-line-soft pt-1">
-                {MONTHS.map((m, i) => (
-                  <div key={i} className="flex-1 text-center text-[10px] font-medium text-ink-mute">{m}</div>
+                {Hp.map((b, N) => (
+                  <div
+                    className="flex-1 text-center text-[10px] font-medium text-ink-mute"
+                    key={N}
+                  >
+                    {b}
+                  </div>
                 ))}
               </div>
             </div>
           </div>
         </div>
-
-        {/* All requests, horizontal */}
         <div>
           <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-mute">
-            All requests <span className="text-ink-mute/70">({sorted.length})</span>
+            {"All requests "}
+            <span className="text-ink-mute/70">
+              {"("}
+              {x.length}
+              {")"}
+            </span>
           </p>
-          {sorted.length === 0 ? (
-            <EmptyState icon={CalendarX} title="No requests" description="This person hasn't requested time off yet." className="py-8" />
+          {x.length === 0 ? (
+            <EmptyState
+              icon={Vendor_CalendarX}
+              title="No requests"
+              description="This person hasn't requested time off yet."
+              className="py-8"
+            />
           ) : (
             <div className="-mx-1 flex gap-3 overflow-x-auto scrollbar-slim px-1 pb-1">
-              {sorted.map((r) => {
-                const lines = requestLines(r);
-                const type = ptoTypeById(lines[0]?.type);
-                const color = type?.color || 'var(--c-ink-mute)';
-                const days = requestDays(r, data.normalDaysOff);
+              {x.map((b) => {
+                var R, E, T;
+                const N = requestLines(b),
+                  _ = ptoTypeById((R = N[0]) == null ? void 0 : R.type),
+                  j = (_ == null ? void 0 : _.color) || "var(--c-ink-mute)",
+                  S = requestDays(b, d.normalDaysOff);
                 return (
                   <button
                     type="button"
-                    key={r.id}
-                    onClick={() => onOpenRequest?.(r.id)}
+                    onClick={() =>
+                      onOpenRequest == null ? void 0 : onOpenRequest(b.id)
+                    }
                     className="flex w-[210px] shrink-0 flex-col gap-2 rounded-card border border-line bg-card p-3 text-left shadow-card transition-shadow duration-[180ms] hover:shadow-lift"
+                    key={b.id}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span
                         className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
-                        style={{ background: `color-mix(in oklch, ${color} 12%, var(--c-card))`, color }}
+                        style={{
+                          background: `color-mix(in oklch, ${j} 12%, var(--c-card))`,
+                          color: j,
+                        }}
                       >
-                        <PtoTypeIcon typeId={type?.id} size={16} />
+                        <PtoTypeIcon
+                          typeId={_ == null ? void 0 : _.id}
+                          size={16}
+                        />
                       </span>
-                      <StatusChip status={r.status} size="xs" />
+                      <StatusChip status={b.status} size="xs" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-ink">{requestTypeLabel(r)}</p>
-                      <p className="text-xs text-ink-soft">{requestRangeLabel(r)}</p>
+                      <p className="text-sm font-bold text-ink">
+                        {requestTypeLabel(b, ptoTypes)}
+                      </p>
+                      <p className="text-xs text-ink-soft">
+                        {requestRangeLabel(b)}
+                      </p>
                     </div>
                     <p className="text-[11px] text-ink-mute">
-                      <span className="font-medium text-ink-soft tabular">{days}</span> charged day{days === 1 ? '' : 's'}
-                      {r.decidedBy && ` · by ${userById(r.decidedBy)?.name?.split(' ')[0]}`}
+                      <span className="font-medium text-ink-soft tabular">
+                        {S}
+                      </span>
+                      {" charged day"}
+                      {S === 1 ? "" : "s"}
+                      {b.decidedBy &&
+                        ` · by ${(T = (E = userById(b.decidedBy)) == null ? void 0 : E.name) == null ? void 0 : T.split(" ")[0]}`}
                     </p>
-                    {lines.length > 1 && (
+                    {N.length > 1 && (
                       <div className="space-y-1">
-                        {lines.map((line, index) => (
-                          <p key={`${line.type}-${line.start}-${index}`} className="truncate text-[11px] text-ink-mute">
-                            {ptoTypeById(line.type)?.name}: {fmtRange(line.start, line.end)}
-                          </p>
-                        ))}
+                        {N.map((C, H) => {
+                          var I;
+                          return (
+                            <p
+                              className="truncate text-[11px] text-ink-mute"
+                              key={`${C.type}-${C.start}-${H}`}
+                            >
+                              {(I = ptoTypeById(C.type)) == null
+                                ? void 0
+                                : I.name}
+                              {": "}
+                              {formatDateRange(C.start, C.end)}
+                            </p>
+                          );
+                        })}
                       </div>
                     )}
-                    {r.status === 'denied' && r.denialReason && (
-                      <p className="rounded-chip bg-danger-soft px-2 py-1 text-[11px] text-danger-ink">{r.denialReason}</p>
+                    {b.status === "denied" && b.denialReason && (
+                      <p className="rounded-chip bg-danger-soft px-2 py-1 text-[11px] text-danger-ink">
+                        {b.denialReason}
+                      </p>
                     )}
-                    {r.note && r.status !== 'denied' && (
-                      <p className="line-clamp-2 text-[11px] italic text-ink-mute">“{r.note}”</p>
+                    {b.note && b.status !== "denied" && (
+                      <p className="line-clamp-2 text-[11px] italic text-ink-mute">
+                        {"“"}
+                        {b.note}
+                        {"”"}
+                      </p>
                     )}
                   </button>
                 );
