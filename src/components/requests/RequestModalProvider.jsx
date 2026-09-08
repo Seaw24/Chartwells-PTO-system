@@ -1,28 +1,46 @@
-import { createContext, useCallback, useContext, useState } from 'react';
-import Modal from '../ui/Modal';
-import RequestForm from './RequestForm';
-
-const RequestModalContext = createContext(null);
-
-// Lets any screen open the "New Request" modal, optionally pre-filled (e.g. from a calendar day).
-export function RequestModalProvider({ children }) {
-  const [state, setState] = useState({ open: false, prefill: {} });
-
-  const openRequest = useCallback((prefill = {}) => setState({ open: true, prefill }), []);
-  const close = useCallback(() => setState({ open: false, prefill: {} }), []);
-
+import React from "react";
+import { Modal } from "../ui/Modal.jsx";
+import { RequestForm } from "./RequestForm.jsx";
+export const RequestModalContext = React.createContext(null);
+export function RequestModalProvider({ children: children }) {
+  const [t, n] = React.useState({
+      open: !1,
+      prefill: {},
+    }),
+    r = React.useCallback(
+      (i = {}) =>
+        n({
+          open: !0,
+          prefill: i,
+        }),
+      [],
+    ),
+    s = React.useCallback(
+      () =>
+        n({
+          open: !1,
+          prefill: {},
+        }),
+      [],
+    );
   return (
-    <RequestModalContext.Provider value={{ openRequest }}>
+    <RequestModalContext.Provider
+      value={{
+        openRequest: r,
+      }}
+    >
       {children}
-      <Modal open={state.open} onClose={close} title="Request time off" size="lg">
-        <RequestForm prefill={state.prefill} onSubmitted={close} onCancel={close} />
+      <Modal open={t.open} onClose={s} title="Request time off" size="lg">
+        <RequestForm prefill={t.prefill} onSubmitted={s} onCancel={s} />
       </Modal>
     </RequestModalContext.Provider>
   );
 }
-
 export function useRequestModal() {
-  const ctx = useContext(RequestModalContext);
-  if (!ctx) throw new Error('useRequestModal must be used within <RequestModalProvider>');
-  return ctx;
+  const e = React.useContext(RequestModalContext);
+  if (!e)
+    throw new Error(
+      "useRequestModal must be used within <RequestModalProvider>",
+    );
+  return e;
 }

@@ -1,476 +1,140 @@
-// Design notes: Role-aware landing. Balances first, then role panels: admins see team
-//   coverage + a pending-approvals shortcut; god-admin gets operational status tiles
-//   (icon + number + context line, linking onward) instead of bare hero numbers. The
-//   navy "Request time off" card is the one bold accent surface, earning its weight.
-// References: Deel home cards; Linear/Height dashboard density; avoids the hero-metric cliché.
-import { Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { startOfWeek, endOfWeek } from 'date-fns';
-import {
-  CalendarPlus,
-  ArrowRight,
-  CalendarRange,
-  Clock3,
-  Plane,
-  AlertOctagon,
-} from 'lucide-react';
-import { useDataSource } from '../data/dataSource';
-import { useCurrentUser } from '../data/session';
-import { useToday } from '../data/today';
-import { useRequestModal } from '../components/requests/RequestModalProvider';
-import { canApprove, isGodAdmin, firstName, ptoTypeById, TEAMS } from '../utils/constants';
-import {
-  toDate,
-  toISO,
-  fmtShort,
-  relativeTime,
-  fmtLong,
-} from '../utils/dateHelpers';
-import {
-  requestEnd,
-  requestLines,
-  requestOverlapsRange,
-  requestRangeLabel,
-  requestStart,
-  requestTypeLabel,
-} from '../utils/requestHelpers';
-import BalanceCards from '../components/requests/BalanceCards';
-import StatusChip from '../components/ui/StatusChip';
-import PtoTypePill from '../components/ui/PtoTypePill';
-import Avatar from '../components/ui/Avatar';
-import Button from '../components/ui/Button';
-import EmptyState from '../components/ui/EmptyState';
-import MiniCalendar from '../components/calendar/MiniCalendar';
-import PtoTypeIcon from '../components/ui/PtoTypeIcon';
-
-export default function Dashboard() {
-  const activeUser = useCurrentUser();
-  const todayIso = useToday();
-  const { requestsForUser, getRequests, getUsers, pendingForApprover, teamMembers, balanceFor, getBlackouts, outOnDay } = useDataSource();
-  const { openRequest } = useRequestModal();
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-    setData(null);
-    async function load() {
-      const approver = canApprove(activeUser.role);
-      const god = isGodAdmin(activeUser.role);
-      const adminTeam = activeUser.role === 'admin' ? activeUser.team : null;
-      const [
-        myRequests,
-        requests,
-        users,
-        pending,
-        members,
-        blackouts,
-        outToday,
-        teamMembersList,
-        outByTeamList,
-      ] = await Promise.all([
-        requestsForUser(activeUser.id),
+import { useResource } from "../hooks/useResource.jsx";
+import { useCurrentUser } from "../context/AuthContext.jsx";
+import { useToday } from "../data/today.jsx";
+import { useDataSource } from "../data/dataSource.jsx";
+import { useCatalog } from "../context/CatalogContext.jsx";
+import { useRequestModal } from "../components/requests/RequestModalProvider.jsx";
+import React from "react";
+import { useVersion } from "../context/DataVersionContext.jsx";
+import { useBumpVersion } from "../context/DataVersionContext.jsx";
+import { startOfWeek as Vendor_startOfWeek } from "date-fns";
+import { toDateLocal } from "../utils/dateHelpers.jsx";
+import { addDays as Vendor_addDays } from "date-fns";
+import { toISO } from "../utils/dateHelpers.jsx";
+import { DashboardView } from "../components/dashboard/DashboardView.jsx";
+import { buildCoverageWeek } from "../components/dashboard/Coverage.jsx";
+import { requestLines } from "../utils/requestHelpers.jsx";
+import { requestTypeLabel } from "../utils/requestHelpers.jsx";
+import { requestRangeLabel } from "../utils/requestHelpers.jsx";
+import { requestEnd } from "../utils/requestHelpers.jsx";
+import { requestStart } from "../utils/requestHelpers.jsx";
+import { RequestDetailModal } from "../components/requests/RequestDetailModal.jsx";
+export function Dashboard() {
+  const e = useCurrentUser(),
+    t = useToday(),
+    {
+      getRequests: getRequests,
+      balanceFor: balanceFor,
+      grantFor: grantFor,
+      usedFor: usedFor,
+      requestsForUser: requestsForUser,
+      coverageForRange: coverageForRange,
+    } = useDataSource(),
+    {
+      users: users,
+      teams: teams,
+      ptoTypes: ptoTypes,
+      holidays: holidays,
+    } = useCatalog(),
+    { openRequest: openRequest } = useRequestModal(),
+    [g, k] = React.useState(null),
+    v = useVersion(),
+    m = useBumpVersion();
+  const { data: p = null } = useResource(
+    ["dashboard", t, ptoTypes.map((type) => type.id)],
+    async () => {
+      const start = Vendor_startOfWeek(toDateLocal(t), {
+        weekStartsOn: 0,
+      });
+      const [requests, myRequests, coverageRows, balances] = await Promise.all([
         getRequests(),
-        getUsers(),
-        approver ? pendingForApprover() : Promise.resolve([]),
-        approver ? teamMembers(adminTeam) : Promise.resolve([]),
-        god ? getBlackouts() : Promise.resolve([]),
-        god ? outOnDay(todayIso) : Promise.resolve([]),
-        god ? Promise.all(TEAMS.map((t) => teamMembers(t.id))) : Promise.resolve([]),
-        god ? Promise.all(TEAMS.map((t) => outOnDay(todayIso, t.id))) : Promise.resolve([]),
+        requestsForUser(e.id),
+        coverageForRange(toISO(start), toISO(Vendor_addDays(start, 6))),
+        Promise.all(
+          ptoTypes.map(async (type) => {
+            const [remaining, grant, used] = await Promise.all([
+              balanceFor(e.id, type.id),
+              grantFor(e.id, type.id),
+              usedFor(e.id, type.id),
+            ]);
+            return {
+              typeId: type.id,
+              name: type.name,
+              remaining,
+              grant,
+              used,
+            };
+          }),
+        ),
       ]);
-      const balanceRows = approver
-        ? await Promise.all(
-            members.map((m) =>
-              Promise.all([balanceFor(m.id, 'vacation'), balanceFor(m.id, 'sick')]).then(([vacation, sick]) => ({
-                id: m.id,
-                vacation,
-                sick,
-              }))
-            )
-          )
-        : [];
-      if (!alive) return;
-      const balancesByMember = {};
-      balanceRows.forEach((row) => { balancesByMember[row.id] = row; });
-      const teamMembersByTeam = {};
-      const outTodayByTeam = {};
-      TEAMS.forEach((t, i) => {
-        teamMembersByTeam[t.id] = teamMembersList[i] ?? [];
-        outTodayByTeam[t.id] = outByTeamList[i] ?? [];
-      });
-      setData({
-        myRequests,
+      return {
         requests,
-        users,
-        pending,
-        members,
-        blackouts,
-        outToday,
-        teamMembersByTeam,
-        outTodayByTeam,
-        balancesByMember,
-      });
-    }
-    load();
-    return () => { alive = false; };
-  }, [activeUser.id, activeUser.role, activeUser.team, todayIso]);
-
-  const greeting = getGreeting();
-  const myRequests = data?.myRequests ?? [];
-  const upcoming = myRequests
-    .filter((r) => r.status === 'approved' && toDate(requestEnd(r)) >= toDate(todayIso))
-    .sort((a, b) => (requestStart(a) > requestStart(b) ? 1 : -1))
-    .slice(0, 3);
-  const activity = [...myRequests]
-    .sort((a, b) => ((a.decidedAt || a.submittedAt) < (b.decidedAt || b.submittedAt) ? 1 : -1))
-    .slice(0, 5);
-
-  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
-
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-1">
-        <p className="text-sm text-ink-mute">{greeting},</p>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 className="text-3xl font-bold tracking-tight text-ink">{activeUser.name.split(' ')[0]}</h2>
-          <p className="text-sm text-ink-mute">{fmtLong(todayIso)}</p>
-        </div>
-      </header>
-
-      <BalanceCards userId={activeUser.id} />
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main column */}
-        <div className="space-y-6 lg:col-span-2">
-          {canApprove(activeUser.role) && (
-            <AdminPanels
-              activeUser={activeUser}
-              todayIso={todayIso}
-              requests={data.requests}
-              pending={data.pending}
-              members={data.members}
-              balancesByMember={data.balancesByMember}
-            />
-          )}
-          {isGodAdmin(activeUser.role) && (
-            <GodAdminPanels
-              requests={data.requests}
-              todayIso={todayIso}
-              blackouts={data.blackouts}
-              outToday={data.outToday}
-              teamMembersByTeam={data.teamMembersByTeam}
-              outTodayByTeam={data.outTodayByTeam}
-            />
-          )}
-
-          <Panel
-            title="Upcoming time off"
-            icon={Plane}
-            action={<Link to="/calendar" className="text-xs font-semibold text-accent hover:text-accent-hover">Open calendar</Link>}
-          >
-            {upcoming.length === 0 ? (
-              <EmptyState
-                icon={CalendarRange}
-                title="Nothing on the books"
-                description="You have no approved time off coming up."
-                className="py-8"
-              />
-            ) : (
-              <ul className="divide-y divide-line-soft">
-                {upcoming.map((r) => {
-                  const firstLine = requestLines(r)[0];
-                  const type = ptoTypeById(firstLine?.type);
-                  const color = type?.color || 'var(--c-ink-mute)';
-                  return (
-                    <li key={r.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                      <span
-                        className="grid h-9 w-9 shrink-0 place-items-center rounded-btn"
-                        style={{ background: `color-mix(in oklch, ${color} 12%, var(--c-card))`, color }}
-                      >
-                        <PtoTypeIcon typeId={firstLine?.type} size={16} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-ink">{requestRangeLabel(r)}</p>
-                        <p className="text-xs text-ink-mute">{requestTypeLabel(r)}</p>
-                      </div>
-                      <StatusChip status={r.status} size="xs" />
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Panel>
-
-          <Panel title="Recent activity" icon={Clock3}>
-            {activity.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-mute">No activity yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {activity.map((r) => (
-                  <li key={r.id} className="flex items-start gap-3 text-sm">
-                    <span
-                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: ptoTypeById(requestLines(r)[0]?.type)?.color || 'var(--c-ink-mute)' }}
-                    />
-                    <p className="flex-1 text-ink-soft">
-                      {activityText(r, data.users)}
-                      <span className="ml-1.5 text-[11px] text-ink-mute">{relativeTime(r.decidedAt || r.submittedAt)}</span>
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        </div>
-
-        {/* Aside */}
-        <div className="space-y-6">
-          <div className="relative overflow-hidden rounded-card bg-navy p-5 text-navy-fg shadow-raised">
-            {/* Dot-grid texture echoes the login screen — the two navy surfaces rhyme. */}
-            <div
-              className="pointer-events-none absolute inset-0 opacity-[0.07]"
-              style={{
-                backgroundImage: 'radial-gradient(circle at 1px 1px, var(--c-navy-fg) 1px, transparent 0)',
-                backgroundSize: '22px 22px',
-              }}
-            />
-            <div className="relative">
-              <p className="eyebrow text-navy-fg-mute">Need a break?</p>
-              <p className="mt-2 text-[17px] font-bold leading-snug">Request time off in under a minute.</p>
-              <Button variant="primary" className="mt-4 w-full" onClick={() => openRequest()}>
-                <CalendarPlus size={17} /> Request Time Off
-              </Button>
-            </div>
-          </div>
-
-          <Panel title="This month" compact>
-            <MiniCalendar userId={activeUser.id} />
-          </Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---- Admin panels ---- */
-function AdminPanels({ activeUser, todayIso, requests, pending, members, balancesByMember }) {
-  const visibleMembers = members.filter((u) => u.role === 'employee' || u.id !== activeUser.id);
-  const oldest = pending.reduce((acc, r) => (!acc || r.submittedAt < acc.submittedAt ? r : acc), null);
-
-  const wkStart = toISO(startOfWeek(toDate(todayIso)));
-  const wkEnd = toISO(endOfWeek(toDate(todayIso)));
-  const outThisWeek = visibleMembers.filter((m) =>
-    requests.some((r) => r.userId === m.id && r.status === 'approved' && requestOverlapsRange(r, wkStart, wkEnd))
-  );
-
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <div className="rounded-card border border-line bg-card p-5 shadow-card">
-        <p className="eyebrow">Team this week</p>
-        <p className="mt-2.5 text-[26px] font-bold leading-none tabular text-ink">
-          {outThisWeek.length}<span className="ml-1.5 text-sm font-medium text-ink-mute">of {visibleMembers.length} out</span>
-        </p>
-        <div className="mt-3.5 flex min-h-[2rem] items-center">
-          {outThisWeek.length === 0 ? (
-            <p className="text-[13px] text-ink-mute">Everyone's in this week.</p>
-          ) : (
-            <div className="flex -space-x-2">
-              {outThisWeek.slice(0, 6).map((m) => (
-                <Avatar key={m.id} name={m.name} id={m.id} size="sm" ring />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <Link
-        to="/approvals"
-        className="group flex flex-col justify-between rounded-card border border-line bg-card p-5 shadow-card transition-shadow duration-200 hover:shadow-lift"
-      >
-        <div>
-          <p className="eyebrow">Pending approvals</p>
-          <p className="mt-2.5 text-[26px] font-bold leading-none tabular" style={{ color: pending.length ? 'var(--c-accent-ink)' : 'var(--c-ink)' }}>
-            {pending.length}
-          </p>
-          {oldest && <p className="mt-2 text-xs text-ink-mute">Oldest {relativeTime(oldest.submittedAt)}</p>}
-        </div>
-        <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent-ink">
-          Review <ArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-        </span>
-      </Link>
-
-      <div className="rounded-card border border-line bg-card p-5 shadow-card sm:col-span-2">
-        <p className="eyebrow mb-3">Team balances</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line text-left">
-                <th className="pb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-mute">Member</th>
-                <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wide text-ink-mute">Vacation</th>
-                <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wide text-ink-mute">Sick</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line-soft">
-              {visibleMembers.map((m) => (
-                <tr key={m.id} className="transition-colors hover:bg-panel/60">
-                  <td className="py-2.5">
-                    <span className="flex items-center gap-2.5">
-                      <Avatar name={m.name} id={m.id} size="xs" />
-                      <span className="font-medium text-ink">{m.name}</span>
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-right tabular font-semibold text-ink-soft">{balancesByMember[m.id]?.vacation}</td>
-                  <td className="py-2.5 text-right tabular font-semibold text-ink-soft">{balancesByMember[m.id]?.sick}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---- God admin panels ---- */
-function GodAdminPanels({ requests, todayIso, blackouts, outToday, teamMembersByTeam, outTodayByTeam }) {
-  const totalPending = requests.filter((r) => r.status === 'pending').length;
-  const upcomingBlackouts = blackouts.filter((b) => toDate(b.end) >= toDate(todayIso));
-
-  const oldestPending = requests
-    .filter((r) => r.status === 'pending')
-    .reduce((a, r) => (!a || r.submittedAt < a.submittedAt ? r : a), null);
-  const nextBlackout = upcomingBlackouts[0];
-
-  // Operational status tiles: number + icon + a context line so each reads as a
-  // glanceable status, not a decorative hero metric. Pending/blackout link onward.
-  const stats = [
-    {
-      label: 'Pending requests',
-      value: totalPending,
-      icon: Clock3,
-      tone: totalPending ? 'var(--c-accent-ink)' : 'var(--c-ink)',
-      context: oldestPending ? `Oldest ${relativeTime(oldestPending.submittedAt)}` : 'All caught up',
-      to: totalPending ? '/approvals' : null,
+        myRequests,
+        coverageRows,
+        balances,
+      };
     },
-    {
-      label: 'Out today',
-      value: outToday.length,
-      icon: Plane,
-      tone: 'var(--c-ink)',
-      context: outToday.length ? outToday.map((r) => firstName(r.user?.name)).slice(0, 3).join(', ') : 'Everyone in',
-    },
-    {
-      label: 'Upcoming blackouts',
-      value: upcomingBlackouts.length,
-      icon: AlertOctagon,
-      tone: upcomingBlackouts.length ? 'var(--c-danger-ink)' : 'var(--c-ink)',
-      context: nextBlackout ? `Next ${fmtShort(nextBlackout.start)}` : 'None scheduled',
-      to: upcomingBlackouts.length ? '/calendar' : null,
-    },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {stats.map((s) => {
-          const Tag = s.to ? Link : 'div';
-          return (
-            <Tag
-              key={s.label}
-              {...(s.to ? { to: s.to } : {})}
-              className={`group relative flex items-start gap-3.5 rounded-card border border-line bg-card p-5 shadow-card ${
-                s.to ? 'transition-shadow duration-200 hover:shadow-lift' : ''
-              }`}
-            >
-              <span
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-[12px]"
-                style={{ background: `color-mix(in oklch, ${s.tone} 12%, var(--c-card))`, color: s.tone }}
-              >
-                <s.icon size={20} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[26px] font-bold leading-none tabular" style={{ color: s.tone }}>{s.value}</p>
-                <p className="mt-1.5 text-[13px] font-semibold text-ink">{s.label}</p>
-                <p className="mt-0.5 truncate text-[11px] text-ink-mute">{s.context}</p>
-              </div>
-              {s.to && (
-                <ArrowRight
-                  size={15}
-                  className="absolute right-4 top-4 text-ink-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-accent-ink"
-                />
-              )}
-            </Tag>
-          );
-        })}
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {TEAMS.map((t) => {
-          const members = teamMembersByTeam[t.id] ?? [];
-          const out = outTodayByTeam[t.id] ?? [];
-          return (
-            <div key={t.id} className="rounded-card border border-line bg-card p-5 shadow-card">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-ink">{t.name}</p>
-                <span className="text-[11px] font-medium text-ink-mute">{members.length} people</span>
-              </div>
-              <p className="mt-2.5 text-[13px] text-ink-soft">
-                <span className="text-lg font-bold tabular text-ink">{out.length}</span> out today
-              </p>
-            </div>
-          );
-        })}
-      </div>
-
-      {upcomingBlackouts.length > 0 && (
-        <div className="flex items-start gap-2.5 rounded-card border border-danger/30 bg-danger-soft px-4 py-3">
-          <AlertOctagon size={16} className="mt-0.5 shrink-0 text-danger-ink" />
-          <div className="text-sm">
-            <p className="font-semibold text-ink">Upcoming blackout periods</p>
-            <ul className="mt-0.5 space-y-0.5 text-ink-soft">
-              {upcomingBlackouts.map((b) => (
-                <li key={b.start}>{fmtShort(b.start)}–{fmtShort(b.end)}: {b.reason}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-    </div>
+    true,
   );
-}
-
-/* ---- shared ---- */
-function Panel({ title, icon: Icon, action, compact, children }) {
+  if ((void 0, !p)) return <DashboardView loading={!0} />;
+  const x = buildCoverageWeek({
+      todayIso: t,
+      users: users,
+      requests: p.requests,
+      teams: teams,
+      holidays: holidays,
+      coverageRows: p.coverageRows,
+    }),
+    b = (j) => {
+      var S;
+      return {
+        id: j.id,
+        typeId: (S = requestLines(j)[0]) == null ? void 0 : S.type,
+        label: requestTypeLabel(j, ptoTypes),
+        rangeLabel: requestRangeLabel(j),
+        status: j.status,
+      };
+    },
+    N = p.myRequests
+      .filter(
+        (j) =>
+          j.status === "approved" &&
+          toDateLocal(requestEnd(j)) >= toDateLocal(t),
+      )
+      .sort((j, S) => (requestStart(j) > requestStart(S) ? 1 : -1))
+      .slice(0, 3)
+      .map(b),
+    _ = p.myRequests
+      .filter((j) => j.status === "pending")
+      .sort((j, S) => (requestStart(j) > requestStart(S) ? 1 : -1))
+      .slice(0, 3)
+      .map(b);
   return (
-    <section className="rounded-card border border-line bg-card p-5 shadow-card">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
-          {Icon && <Icon size={15} className="text-ink-mute" />}
-          {title}
-        </h3>
-        {action}
-      </div>
-      {children}
-    </section>
+    <>
+      <DashboardView
+        activeUser={e}
+        week={x}
+        personal={{
+          balances: p.balances,
+          upcoming: N,
+          pending: _,
+        }}
+        minRequestIso={t}
+        onStartRequest={(j) => {
+          j >= t &&
+            openRequest({
+              start: j,
+              end: j,
+            });
+        }}
+        onBarClick={(j) => k(j.requestId)}
+      />
+      <RequestDetailModal
+        requestId={g}
+        open={!!g}
+        onClose={() => k(null)}
+        onChanged={m}
+      />
+    </>
   );
-}
-
-function activityText(r, users) {
-  const type = requestTypeLabel(r);
-  const range = requestRangeLabel(r);
-  if (r.status === 'approved') {
-    const decider = users.find((u) => u.id === r.decidedBy);
-    const by = decider && decider.id !== r.userId ? <> by {firstName(decider.name)}</> : null;
-    return <>Your {type} request for {range} was approved{by}.</>;
-  }
-  if (r.status === 'denied') return <>Your {type} request for {range} was denied.</>;
-  if (r.status === 'cancelled') return <>You cancelled your {type} request for {range}.</>;
-  return <>You requested {type} for {range}. Awaiting approval.</>;
-}
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
 }

@@ -1,131 +1,273 @@
-  // Design notes: Status tabs with live counts up top, a two-column card grid below.
-  //   Cancel routes through a confirm dialog (reversible, never a surprise). Empty states
-  //   are status-aware and the "All" empty state offers the first request as its CTA.
-  // References: Gusto/Charlie HR request lists; status-filtered tab pattern.
-  import { useEffect, useMemo, useState } from 'react';
-  import { Mail, ArrowDownUp } from 'lucide-react';
-  import { useRequestModal } from '../components/requests/RequestModalProvider';
-  import { useToast } from '../components/ui/Toast';
-  import RequestCard from '../components/requests/RequestCard';
-  import EmptyState from '../components/ui/EmptyState';
-  import Button from '../components/ui/Button';
-  import ConfirmDialog from '../components/ui/ConfirmDialog';
-  import { toDate } from '../utils/dateHelpers';
-  import { requestStart } from '../utils/requestHelpers';
-  import {useDataSource} from "../data/dataSource";
-  import {useCurrentUser} from "../data/session";
-
-  const TABS = ['All', 'Pending', 'Approved', 'Denied', 'Cancelled'];
-
-  export default function MyRequests() {
-    const activeUser = useCurrentUser();
-    const { requestsForUser, cancelRequest } = useDataSource();
-    const { openRequest } = useRequestModal();
-    const toast = useToast();
-    const [tab, setTab] = useState('All');
-    const [refresh, setRefresh] = useState(0);
-    const [sort, setSort] = useState('recent');
-    const [toCancel, setToCancel] = useState(null);
-
-  const [all, setAll] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-    requestsForUser(activeUser.id).then((rows) => {
-      if (alive) setAll(rows);
-    });
-    return () => { alive = false; };
-  }, [activeUser.id, refresh]);
-
-    const counts = useMemo(() => {
-      const list = all ?? [];
-      const c = { All: list.length };
-      list.forEach((r) => {
-        const k = r.status[0].toUpperCase() + r.status.slice(1);
-        c[k] = (c[k] || 0) + 1;
-      });
-      return c;
-    }, [all]);
-
-    const filtered = useMemo(() => {
-      const list = all ?? [];
-      let filteredList = tab === 'All' ? list : list.filter((r) => r.status === tab.toLowerCase());
-      filteredList = [...filteredList].sort((a, b) =>
-        sort === 'recent'
-          ? a.submittedAt < b.submittedAt
-            ? 1
-            : -1
-          : toDate(requestStart(a)) - toDate(requestStart(b))
-      );
-      return filteredList;
-    }, [all, tab, sort]);
-       if (all === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
-
-    return (
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1.5 overflow-x-auto no-scrollbar">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`flex items-center gap-1.5 rounded-btn px-3 py-1.5 text-sm font-semibold transition-colors ${
-                  tab === t ? 'bg-navy text-navy-fg' : 'text-ink-soft hover:bg-panel'
-                }`}
-              >
-                {t}
-                {counts[t] != null && (
-                  <span className={`rounded-full px-1.5 text-[11px] ${tab === t ? 'bg-navy-fg/20' : 'bg-panel'}`}>
-                    {counts[t]}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setSort((s) => (s === 'recent' ? 'date' : 'recent'))}
-            className="flex items-center gap-1.5 rounded-btn border border-line bg-card px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-panel"
-          >
-            <ArrowDownUp size={14} />
-            {sort === 'recent' ? 'Newest first' : 'By start date'}
-          </button>
+import { useResource } from "../hooks/useResource.jsx";
+import { requestEnd } from "../utils/requestHelpers.jsx";
+import { Modal } from "../components/ui/Modal.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { useCurrentUser } from "../context/AuthContext.jsx";
+import { useToday } from "../data/today.jsx";
+import { useDataSource } from "../data/dataSource.jsx";
+import { useRequestModal } from "../components/requests/RequestModalProvider.jsx";
+import { useToast } from "../components/ui/Toast.jsx";
+import React from "react";
+import { useVersion } from "../context/DataVersionContext.jsx";
+import { useBumpVersion } from "../context/DataVersionContext.jsx";
+import { toDateLocal } from "../utils/dateHelpers.jsx";
+import { requestStart } from "../utils/requestHelpers.jsx";
+import { SegmentedControl } from "../components/ui/SegmentedControl.jsx";
+import { ChevronDown as Vendor_ChevronDown } from "lucide-react";
+import { CardSkeleton } from "../components/ui/Skeleton.jsx";
+import { EmptyState } from "../components/ui/EmptyState.jsx";
+import { CalendarRange as Vendor_CalendarRange } from "lucide-react";
+import { RequestCard } from "../components/requests/RequestCard.jsx";
+export const REQUEST_TABS = [
+  {
+    value: "all",
+    label: "All",
+  },
+  {
+    value: "pending",
+    label: "Pending",
+  },
+  {
+    value: "approved",
+    label: "Approved",
+  },
+  {
+    value: "denied",
+    label: "Rejected",
+  },
+  {
+    value: "past",
+    label: "Past",
+  },
+];
+export function requestBucket(e, t) {
+  return e.status === "pending"
+    ? "pending"
+    : e.status === "denied"
+      ? "denied"
+      : e.status === "approved" && requestEnd(e) >= t
+        ? "approved"
+        : "past";
+}
+export function matchesRequestTab(e, t, n) {
+  return t === "all" || requestBucket(e, n) === t;
+}
+export function requestCounts(e, t) {
+  return e.reduce((n, r) => ((n[requestBucket(r, t)] += 1), n), {
+    pending: 0,
+    approved: 0,
+    denied: 0,
+    past: 0,
+  });
+}
+export function ConfirmDialog({
+  open,
+  onClose,
+  onConfirm,
+  title = "Are you sure?",
+  message,
+  confirmLabel = "Confirm",
+  confirmVariant = "danger",
+}) {
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  React.useEffect(() => {
+    if (open) setError(null);
+  }, [open]);
+  async function confirm() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onConfirm?.();
+      onClose?.();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={saving ? undefined : onClose}
+      title={title}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant={confirmVariant} disabled={saving} onClick={confirm}>
+            {saving ? "Saving…" : confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-ink-soft">{message}</p>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-danger-ink">
+          {error}
+        </p>
+      )}
+    </Modal>
+  );
+}
+export function MyRequests() {
+  const e = useCurrentUser(),
+    t = useToday(),
+    { requestsForUser: requestsForUser, cancelRequest: cancelRequest } =
+      useDataSource(),
+    { openRequest: openRequest } = useRequestModal(),
+    i = useToast(),
+    [o, c] = React.useState("all"),
+    l = useVersion(),
+    u = useBumpVersion(),
+    [h, d] = React.useState("recent"),
+    [f, p] = React.useState(null);
+  const { data: y = null } = useResource(
+    ["my-requests"],
+    () => requestsForUser(e.id),
+    true,
+  );
+  void 0;
+  const k = React.useMemo(() => requestCounts(y ?? [], t), [y, t]),
+    v = React.useMemo(
+      () =>
+        [...(y ?? []).filter((j) => matchesRequestTab(j, o, t))].sort((j, S) =>
+          h === "recent"
+            ? j.submittedAt < S.submittedAt
+              ? 1
+              : -1
+            : toDateLocal(requestStart(j)) - toDateLocal(requestStart(S)),
+        ),
+      [y, o, h, t],
+    ),
+    m = y === null,
+    x = (y == null ? void 0 : y.length) ?? 0,
+    b = m
+      ? "Loading your time off…"
+      : x === 0
+        ? "Nothing on the books yet."
+        : `${k.pending} pending · ${k.approved} approved · ${k.denied} rejected`,
+    N = {
+      all: {
+        title: "No requests yet",
+        description: "Every request you submit shows up here.",
+      },
+      pending: {
+        title: "No pending requests",
+        description: "You're all set. Nothing is waiting on a decision.",
+      },
+      approved: {
+        title: "No approved requests",
+        description: "Requests your manager approves show here.",
+      },
+      denied: {
+        title: "No rejected requests",
+        description: "Requests your manager could not approve show here.",
+      },
+      past: {
+        title: "Nothing in the past yet",
+        description:
+          "Time off you have already taken, and anything you cancelled, shows here.",
+      },
+    };
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="eyebrow">{"Your time off"}</p>
+          <h1 className="mt-1.5 text-[26px] font-bold leading-none tracking-tight text-ink">
+            {"My Requests"}
+          </h1>
+          <p className="mt-2 text-[13px] font-medium text-ink-soft">{b}</p>
         </div>
-
-        {filtered.length === 0 ? (
-          <div className="rounded-card border border-line bg-card shadow-card">
-            <EmptyState
-              icon={Mail}
-              title={tab === 'All' ? 'No requests yet' : `No ${tab.toLowerCase()} requests`}
-              description={tab === 'All' ? 'Ready for some time off? Submit your first request.' : 'Nothing here right now.'}
-              className="py-16"
-              action={
-                tab === 'All' && (
-                  <Button variant="primary" onClick={() => openRequest()}>
-                    Request time off
-                  </Button>
-                )
-              }
+      </header>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SegmentedControl
+          options={REQUEST_TABS}
+          value={o}
+          onChange={c}
+          size="sm"
+        />
+        {!m && v.length > 0 && (
+          <div className="relative">
+            <select
+              value={h}
+              onChange={(_) => d(_.target.value)}
+              aria-label="Sort requests"
+              className="h-9 cursor-pointer appearance-none rounded-btn border border-line bg-card pl-3 pr-8 text-sm font-semibold text-ink-soft transition-colors hover:bg-panel focus:border-accent focus:outline-none"
+            >
+              <option value="recent">{"Newest first"}</option>
+              <option value="date">{"By start date"}</option>
+            </select>
+            <Vendor_ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-mute"
             />
           </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {filtered.map((r) => (
-              <RequestCard key={r.id} request={r} onCancel={setToCancel} />
-            ))}
-          </div>
         )}
-
-        <ConfirmDialog
-          open={!!toCancel}
-          onClose={() => setToCancel(null)}
-          onConfirm={() => {
-            cancelRequest(toCancel.id).then(() => setRefresh((r) => r + 1));
-            toast('Request cancelled.', { kind: 'info' });
-          }}
-          title="Cancel this request?"
-          message="This will withdraw your pending request. You can always submit a new one."
-          confirmLabel="Cancel request"
-        />
       </div>
-    );
-  }
+      {m ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Array.from({
+            length: 4,
+          }).map((_, j) => (
+            <CardSkeleton lines={2} key={j} />
+          ))}
+        </div>
+      ) : x === 0 ? (
+        <div className="rounded-card border border-line bg-card shadow-card">
+          <EmptyState
+            icon={Vendor_CalendarRange}
+            title="No requests yet"
+            description="Ready for some time off? Submit your first request."
+            className="py-16"
+            action={
+              <Button variant="primary" onClick={() => openRequest()}>
+                {"Request time off"}
+              </Button>
+            }
+          />
+        </div>
+      ) : v.length === 0 ? (
+        <div className="rounded-card border border-line bg-card shadow-card">
+          <EmptyState
+            icon={Vendor_CalendarRange}
+            title={N[o].title}
+            description={N[o].description}
+            className="py-14"
+          />
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {v.map((_, j) => (
+            <div
+              style={{
+                "--i": j,
+              }}
+              className="stagger-in h-full"
+              key={_.id}
+            >
+              <RequestCard request={_} onCancel={p} />
+            </div>
+          ))}
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!f}
+        onClose={() => p(null)}
+        onConfirm={async () => {
+          await cancelRequest(f.id);
+          i("Request cancelled.", {
+            kind: "info",
+          });
+        }}
+        title="Cancel this request?"
+        message="This will withdraw your pending request. You can always submit a new one."
+        confirmLabel="Cancel request"
+      />
+    </div>
+  );
+}

@@ -1,289 +1,580 @@
-// Design notes: A triage queue. Pending vs Recent Decisions as two tabs; god-admin gets
-//   a sticky select-all/bulk-approve bar that stays in reach while scrolling a long
-//   queue. "Inbox zero" is the celebrated empty state. Count pills use accent-strong/ink
-//   for AA. Recent decisions stay undoable for 24h so a misclick is never final.
-// References: approval-queue UX research; Linear inbox density.
-import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { differenceInHours } from 'date-fns';
-import { Inbox, RotateCcw, CheckCheck, Search, ArrowDownUp, SearchX } from 'lucide-react';
-import { useDataSource } from '../data/dataSource';
-import { useCurrentUser } from '../data/session';
-import { useToday } from '../data/today';
-import { useToast } from '../components/ui/Toast';
-import { isGodAdmin, userById, firstName, TEAMS } from '../utils/constants';
-import { relativeTime, toDate, fmtTime } from '../utils/dateHelpers';
-import { requestDays, requestRangeLabel, requestTypeLabel } from '../utils/requestHelpers';
-import ApprovalCard from '../components/requests/ApprovalCard';
-import PersonRequestsPanel from '../components/requests/PersonRequestsPanel';
-import RequestDetailModal from '../components/requests/RequestDetailModal';
-import EmptyState from '../components/ui/EmptyState';
-import StatusChip from '../components/ui/StatusChip';
-import Avatar from '../components/ui/Avatar';
-import Button from '../components/ui/Button';
+import { useResource } from "../hooks/useResource.jsx";
+import { useCurrentUser } from "../context/AuthContext.jsx";
+import { useToday } from "../data/today.jsx";
+import { useDataSource } from "../data/dataSource.jsx";
+import { useCatalog } from "../context/CatalogContext.jsx";
+import { useToast } from "../components/ui/Toast.jsx";
+import { isGodAdmin } from "../utils/constants.jsx";
+import React from "react";
+import { useVersion } from "../context/DataVersionContext.jsx";
+import { useBumpVersion } from "../context/DataVersionContext.jsx";
+import { useSearchParams as Vendor_useSearchParams } from "react-router-dom";
+import { useOrg } from "../context/OrgContext.jsx";
+import { requestTypeLabel } from "../utils/requestHelpers.jsx";
+import { requestDays } from "../utils/requestHelpers.jsx";
+import { matchesRequestTab } from "./MyRequests.jsx";
+import { requestCounts } from "./MyRequests.jsx";
+import { differenceInCalendarDays as Vendor_differenceInCalendarDays } from "date-fns";
+import { toDateLocal } from "../utils/dateHelpers.jsx";
+import { Inbox as Vendor_Inbox } from "lucide-react";
+import { History as Vendor_History } from "lucide-react";
+import { firstName } from "../utils/constants.jsx";
+import { SegmentedControl } from "../components/ui/SegmentedControl.jsx";
+import { REQUEST_TABS } from "./MyRequests.jsx";
+import { Search as Vendor_Search } from "lucide-react";
+import { ChevronDown as Vendor_ChevronDown } from "lucide-react";
+import { FilterDropdown } from "../components/ui/FilterDropdown.jsx";
+import { Users as Vendor_Users } from "lucide-react";
+import { EmptyState } from "../components/ui/EmptyState.jsx";
+import { SearchX as Vendor_SearchX } from "lucide-react";
+import { Button } from "../components/ui/Button.jsx";
+import { ApprovalCard } from "../components/requests/ApprovalCard.jsx";
+import { differenceInHours as Vendor_differenceInHours } from "date-fns";
+import { Avatar } from "../components/ui/Avatar.jsx";
+import { requestRangeLabel } from "../utils/requestHelpers.jsx";
+import { StatusChip } from "../components/requests/RequestDetailModal.jsx";
+import { fmtDateTime } from "../utils/dateHelpers.jsx";
+import { PersonRequestsPanel } from "../components/requests/PersonRequestsPanel.jsx";
+import { RequestDetailModal } from "../components/requests/RequestDetailModal.jsx";
+import { Skeleton } from "../components/ui/Skeleton.jsx";
+export function Approvals() {
+  var Dt, Jr, Na, Sa;
+  const [saving, setSaving] = React.useState(false);
+  const mutationLock = React.useRef(false);
+  async function runDecision(action) {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
+    setSaving(true);
+    try {
+      await action();
+    } catch (error) {
+      d(error.message, { kind: "error" });
+    } finally {
+      mutationLock.current = false;
+      setSaving(false);
+    }
+  }
 
-export default function Approvals() {
-  const activeUser = useCurrentUser();
-  const todayIso = useToday();
-  const { pendingForApprover, recentDecisionsBy, approveRequest, denyRequest, approveMany, undoDecision } = useDataSource();
-  const toast = useToast();
-  const god = isGodAdmin(activeUser.role);
-
-  const [data, setData] = useState(null);
-  const [tab, setTab] = useState('pending');
-  const [teamFilter, setTeamFilter] = useState('all');
-  const [selected, setSelected] = useState(new Set());
-  const [query, setQuery] = useState('');
-  const [sort, setSort] = useState('oldest');
-  const [personId, setPersonId] = useState(null);
-  const [detailId, setDetailId] = useState(null);
-  const [refresh, setRefresh] = useState(0);
-  const [params, setParams] = useSearchParams();
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all([pendingForApprover(), recentDecisionsBy()]).then(([pendingAll, decisions]) => {
-      if (alive) setData({ pendingAll, decisions });
-    });
-    return () => { alive = false; };
-  }, [refresh]);
-
-  // Deep-link from elsewhere (e.g. a person's history on the Team page): open that
-  // request's detail widget, then clear the param so a refresh doesn't reopen it.
-  useEffect(() => {
-    const reqId = params.get('req');
-    if (!reqId) return;
-    setDetailId(reqId);
-    setParams({}, { replace: true });
-  }, [params, setParams]);
-
-  const pendingAll = data?.pendingAll ?? [];
-  const teamScoped = useMemo(
-    () => (god && teamFilter !== 'all' ? pendingAll.filter((r) => userById(r.userId)?.team === teamFilter) : pendingAll),
-    [pendingAll, god, teamFilter]
+  const e = useCurrentUser(),
+    t = useToday(),
+    {
+      pendingForApprover: pendingForApprover,
+      decisionHistory: decisionHistory,
+      approveRequest: approveRequest,
+      denyRequest: denyRequest,
+      approveMany: approveMany,
+      undoDecision: undoDecision,
+    } = useDataSource(),
+    {
+      ptoTypes: ptoTypes,
+      userById: userById,
+      teamById: teamById,
+    } = useCatalog(),
+    d = useToast(),
+    f = isGodAdmin(e.role),
+    [g, k] = React.useState("all"),
+    [v, m] = React.useState("all"),
+    [x, b] = React.useState(new Set()),
+    [N, _] = React.useState(""),
+    [j, S] = React.useState("oldest"),
+    [R, E] = React.useState(null),
+    [T, C] = React.useState(null),
+    H = useVersion(),
+    I = useBumpVersion(),
+    [D, q] = Vendor_useSearchParams(),
+    Z = useOrg(),
+    P = React.useMemo(
+      () => (f ? Z.teams.map((F) => F.id) : Z.adminTeamIds(e.id)),
+      [f, Z, e.id],
+    ),
+    $ = f || P.length >= 2,
+    U = React.useMemo(() => {
+      const F = P.map((pe) => Z.teamById(pe)).filter(Boolean);
+      return [
+        {
+          value: "all",
+          label: "All teams",
+          hint: new Set(
+            F.flatMap((pe) => Z.membersOf(pe.id).map((tt) => tt.id)),
+          ).size,
+        },
+        ...F.map((pe) => ({
+          value: pe.id,
+          label: pe.name,
+          hint: Z.membersOf(pe.id).length,
+        })),
+      ];
+    }, [P, Z]),
+    X = !f && P.length >= 2 ? P : null,
+    V = X ? X.join(",") : "all";
+  const { data: p = null } = useResource(
+    ["approvals", V],
+    async () => {
+      const [pendingAll, decisions] = await Promise.all([
+        pendingForApprover(),
+        decisionHistory(X),
+      ]);
+      return {
+        pendingAll,
+        decisions,
+      };
+    },
+    true,
   );
-
-  // Search by employee name or PTO type, then sort. Lets an approver find one request in
-  // a long queue (oldest-first by default so the most overdue surfaces).
-  const pending = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = teamScoped.filter((r) => {
-      if (!q) return true;
-      const hay = `${userById(r.userId)?.name} ${requestTypeLabel(r)}`.toLowerCase();
-      return hay.includes(q);
-    });
-    const byAge = (a, b) => (a.submittedAt < b.submittedAt ? -1 : 1);
-    return [...list].sort((a, b) =>
-      sort === 'oldest' ? byAge(a, b)
-      : sort === 'newest' ? -byAge(a, b)
-      : requestDays(b) - requestDays(a)
-    );
-  }, [teamScoped, query, sort]);
-
-  const decisions = data?.decisions ?? [];
-
-  const toggleSel = (id) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelected(next);
-  };
-
-  const handleApprove = (r) => {
-    approveRequest(r.id).then(() => {
-      setRefresh((x) => x + 1);
-      toast(`Approved ${firstName(userById(r.userId)?.name)}'s request.`, { kind: 'success' });
-    });
-  };
-  const handleDeny = (r, reason) => {
-    denyRequest(r.id, reason).then(() => {
-      setRefresh((x) => x + 1);
-      toast(`Denied ${firstName(userById(r.userId)?.name)}'s request.`, { kind: 'info' });
-    });
-  };
-  const bulkApprove = () => {
-    const count = selected.size;
-    approveMany([...selected]).then((result) => {
-      setRefresh((x) => x + 1);
-      toast(`Approved ${count} request${count === 1 ? '' : 's'}.`, { kind: 'success' });
-      if (result.failed.length) {
-        toast(`${result.failed.length} request${result.failed.length === 1 ? '' : 's'} skipped.`, { kind: 'info' });
-      }
-      setSelected(new Set());
-    });
-  };
-
-  if (data === null) return <div className="p-6 text-sm text-ink-mute">Loading…</div>;
-
+  (void 0,
+    React.useEffect(() => {
+      const F = D.get("req");
+      F &&
+        (C(F),
+        q(
+          {},
+          {
+            replace: !0,
+          },
+        ));
+    }, [D, q]));
+  const he = p === null,
+    K = (p == null ? void 0 : p.pendingAll) ?? [],
+    A = (p == null ? void 0 : p.decisions) ?? [],
+    B = React.useMemo(
+      () =>
+        $ && v !== "all"
+          ? K.filter((F) => {
+              var se;
+              return (
+                ((se = userById(F.userId)) == null ? void 0 : se.team) === v
+              );
+            })
+          : K,
+      [K, $, v],
+    ),
+    ae = React.useMemo(
+      () =>
+        $ && v !== "all"
+          ? A.filter((F) => {
+              var se;
+              return (
+                ((se = userById(F.userId)) == null ? void 0 : se.team) === v
+              );
+            })
+          : A,
+      [A, $, v],
+    ),
+    fe = React.useMemo(() => {
+      const F = N.trim().toLowerCase(),
+        se = B.filter((tt) => {
+          var ei;
+          return F
+            ? `${(ei = userById(tt.userId)) == null ? void 0 : ei.name} ${requestTypeLabel(tt, ptoTypes)}`
+                .toLowerCase()
+                .includes(F)
+            : !0;
+        }),
+        pe = (tt, Lt) => (tt.submittedAt < Lt.submittedAt ? -1 : 1);
+      return [...se].sort((tt, Lt) =>
+        j === "oldest"
+          ? pe(tt, Lt)
+          : j === "newest"
+            ? -pe(tt, Lt)
+            : requestDays(Lt) - requestDays(tt),
+      );
+    }, [B, N, j]),
+    ye = React.useMemo(() => {
+      const F = N.trim().toLowerCase();
+      return ae.filter((se) => {
+        var pe;
+        return !(
+          !matchesRequestTab(se, g, t) ||
+          (F &&
+            !`${(pe = userById(se.userId)) == null ? void 0 : pe.name} ${requestTypeLabel(se, ptoTypes)}`
+              .toLowerCase()
+              .includes(F))
+        );
+      });
+    }, [ae, g, N, t]),
+    Q = React.useMemo(() => requestCounts([...B, ...ae], t), [B, ae, t]),
+    Y = g === "all" || g === "pending",
+    ee = g !== "pending",
+    Pe =
+      (Y ? B.length : 0) +
+      (ee ? ae.filter((F) => matchesRequestTab(F, g, t)).length : 0),
+    ve = (Y ? fe.length : 0) + (ee ? ye.length : 0),
+    _e = React.useMemo(() => {
+      if (!B.length) return 0;
+      const F = B.reduce(
+        (se, pe) => (pe.submittedAt < se ? pe.submittedAt : se),
+        B[0].submittedAt,
+      );
+      return Math.abs(
+        Vendor_differenceInCalendarDays(toDateLocal(t), toDateLocal(F)),
+      );
+    }, [B, t]),
+    Mt = $
+      ? v !== "all"
+        ? ((Dt = Z.teamById(v)) == null ? void 0 : Dt.name) ||
+          ((Jr = teamById(v)) == null ? void 0 : Jr.name)
+        : f
+          ? "All teams"
+          : "Your teams"
+      : ((Na = teamById(e.team)) == null ? void 0 : Na.name) || "Your team",
+    mt = f
+      ? "across all teams"
+      : P.length >= 2
+        ? "across your teams"
+        : `on ${((Sa = teamById(e.team)) == null ? void 0 : Sa.name) || "your team"}`,
+    jt = he
+      ? "Loading your queue…"
+      : g === "all"
+        ? `${Q.pending} pending · ${Q.approved} approved · ${Q.denied} rejected`
+        : g === "pending"
+          ? Q.pending === 0
+            ? "You're all caught up. No requests are waiting on you."
+            : `${Q.pending} request${Q.pending === 1 ? "" : "s"} waiting on you${_e >= 2 ? ` · oldest waited ${_e} days` : ""}`
+          : g === "approved"
+            ? `${Q.approved} approved request${Q.approved === 1 ? "" : "s"} still ahead ${mt}.`
+            : g === "denied"
+              ? `${Q.denied} rejected request${Q.denied === 1 ? "" : "s"} ${mt}.`
+              : `${Q.past} request${Q.past === 1 ? "" : "s"} already taken ${mt}.`,
+    W = {
+      all: {
+        icon: Vendor_Inbox,
+        title: "Nothing here yet",
+        description: "Requests from your team appear here as they come in.",
+      },
+      pending: {
+        icon: Vendor_Inbox,
+        title: "Inbox zero",
+        description: "No requests are waiting on you right now.",
+      },
+      approved: {
+        icon: Vendor_History,
+        title: "No approved time off ahead",
+        description: "Time off you approve shows here until the dates pass.",
+      },
+      denied: {
+        icon: Vendor_History,
+        title: "No rejected requests",
+        description: "Requests you could not approve show here.",
+      },
+      past: {
+        icon: Vendor_History,
+        title: "Nothing in the past yet",
+        description: "Time off that has already been taken shows here.",
+      },
+    },
+    we = (F) => {
+      const se = new Set(x);
+      (se.has(F) ? se.delete(F) : se.add(F), b(se));
+    },
+    be = (request) =>
+      runDecision(async () => {
+        await approveRequest(request.id);
+        d(`Approved ${firstName(userById(request.userId)?.name)}'s request.`, {
+          kind: "success",
+        });
+      }),
+    cn = (request, reason) =>
+      runDecision(async () => {
+        await denyRequest(request.id, reason);
+        d("Request rejected.", { kind: "info" });
+      }),
+    un = () =>
+      runDecision(async () => {
+        const result = await approveMany([...x]);
+        if (result.approved.length)
+          d(
+            `Approved ${result.approved.length} request${result.approved.length === 1 ? "" : "s"}.`,
+            { kind: "success" },
+          );
+        if (result.failed.length)
+          d(`${result.failed.length} skipped: ${result.failed[0].reason}`, {
+            kind: "error",
+          });
+        b(new Set(result.failed.map((item) => item.id)));
+      });
   return (
-    <div className="space-y-5">
-      <div className="flex gap-1.5">
-        <Tab active={tab === 'pending'} onClick={() => setTab('pending')} count={pendingAll.length}>Pending</Tab>
-        <Tab active={tab === 'recent'} onClick={() => setTab('recent')}>Recent Decisions</Tab>
-      </div>
-
-      {tab === 'pending' && (
-        <div className="flex flex-wrap items-center gap-2">
+    <fieldset
+      disabled={saving}
+      aria-busy={saving}
+      className="space-y-6"
+      style={{ minWidth: 0 }}
+    >
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="eyebrow">{Mt}</p>
+          <h1 className="mt-1.5 text-[26px] font-bold leading-none tracking-tight text-ink">
+            {"Approvals"}
+          </h1>
+          <p className="mt-2 text-[13px] font-medium text-ink-soft">{jt}</p>
+        </div>
+        <SegmentedControl
+          options={REQUEST_TABS}
+          value={g}
+          onChange={k}
+          size="sm"
+        />
+      </header>
+      {!he && Pe > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute" />
+            <Vendor_Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute"
+            />
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={N}
+              onChange={(F) => _(F.target.value)}
               placeholder="Search by name or type…"
-              aria-label="Search pending requests"
-              className="w-full rounded-btn border border-line bg-card py-2 pl-9 pr-3 text-sm text-ink placeholder:text-ink-mute focus:border-accent focus:outline-none"
+              aria-label="Search requests"
+              className="h-9 w-full rounded-btn border border-line bg-card pl-9 pr-3 text-sm text-ink placeholder:text-ink-mute focus:border-accent focus:outline-none"
             />
           </div>
-          <label className="flex items-center gap-1.5 rounded-btn border border-line bg-card pl-2.5 text-ink-soft">
-            <ArrowDownUp size={14} className="text-ink-mute" />
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              aria-label="Sort requests"
-              className="bg-transparent py-2 pr-2 text-xs font-semibold text-ink focus:outline-none"
-            >
-              <option value="oldest">Oldest first</option>
-              <option value="newest">Newest first</option>
-              <option value="longest">Longest first</option>
-            </select>
-          </label>
-          {god && (
-            <select
-              value={teamFilter}
-              onChange={(e) => setTeamFilter(e.target.value)}
-              aria-label="Filter by team"
-              className="rounded-btn border border-line bg-card px-3 py-2 text-sm font-medium text-ink focus:border-accent focus:outline-none"
-            >
-              <option value="all">All teams</option>
-              {TEAMS.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            {Y && (
+              <div className="relative">
+                <select
+                  value={j}
+                  onChange={(F) => S(F.target.value)}
+                  aria-label="Sort requests"
+                  className="h-9 cursor-pointer appearance-none rounded-btn border border-line bg-card pl-3 pr-8 text-sm font-semibold text-ink-soft transition-colors hover:bg-panel focus:border-accent focus:outline-none"
+                >
+                  <option value="oldest">{"Oldest first"}</option>
+                  <option value="newest">{"Newest first"}</option>
+                  <option value="longest">{"Longest first"}</option>
+                </select>
+                <Vendor_ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-mute"
+                />
+              </div>
+            )}
+            {$ && (
+              <FilterDropdown
+                options={U}
+                value={v}
+                onChange={m}
+                leadingIcon={Vendor_Users}
+                size="sm"
+                searchable={!0}
+                searchPlaceholder="Search teams…"
+                ariaLabel="Filter by team"
+              />
+            )}
+          </div>
+        </div>
+      )}
+      {he ? (
+        <ApprovalsSkeleton />
+      ) : Pe === 0 ? (
+        <div className="rounded-card border border-line bg-card shadow-card">
+          <EmptyState
+            icon={W[g].icon}
+            title={W[g].title}
+            description={W[g].description}
+            className="py-14"
+          />
+        </div>
+      ) : ve === 0 ? (
+        <div className="rounded-card border border-line bg-card shadow-card">
+          <EmptyState
+            icon={Vendor_SearchX}
+            title="No matches"
+            description={`Nothing matches “${N}”. Clear the search to see all ${Pe}.`}
+            className="py-14"
+          />
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Y && fe.length > 0 && (
+            <section className="space-y-3">
+              {g === "all" && <p className="eyebrow">{"Waiting on you"}</p>}
+              {f && (
+                <div className="sticky top-0 z-10 flex items-center justify-between rounded-card border border-line bg-card/95 px-4 py-2.5 shadow-card backdrop-blur">
+                  <label className="flex items-center gap-2 text-sm font-medium text-ink-soft">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-accent"
+                      checked={x.size === fe.length && fe.length > 0}
+                      onChange={(F) =>
+                        b(
+                          F.target.checked
+                            ? new Set(fe.map((se) => se.id))
+                            : new Set(),
+                        )
+                      }
+                    />
+                    {"Select all"}
+                    {x.size > 0 && (
+                      <span className="text-ink-mute">
+                        {"· "}
+                        {x.size}
+                        {" selected"}
+                      </span>
+                    )}
+                  </label>
+                  {x.size > 0 && (
+                    <Button variant="success" size="sm" onClick={un}>
+                      {"Approve "}
+                      {x.size}
+                    </Button>
+                  )}
+                </div>
+              )}
+              <div className="space-y-3">
+                {fe.map((F, se) => (
+                  <ApprovalCard
+                    index={se}
+                    request={F}
+                    onApprove={be}
+                    onDeny={cn}
+                    selectable={f}
+                    selected={x.has(F.id)}
+                    onToggleSelect={() => we(F.id)}
+                    onOpenPerson={E}
+                    onOpenDetail={(pe) => C(pe.id)}
+                    key={F.id}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+          {ee && ye.length > 0 && (
+            <section className="space-y-3">
+              {g === "all" && <p className="eyebrow">{"Already decided"}</p>}
+              <div className="overflow-hidden rounded-card border border-line bg-card shadow-card">
+                <ul className="divide-y divide-line-soft">
+                  {ye.map((F) => {
+                    const se = userById(F.userId),
+                      pe = userById(F.decidedBy),
+                      tt = F.decidedBy === e.id,
+                      Lt =
+                        tt &&
+                        F.status === "approved" &&
+                        F.decidedAt &&
+                        Vendor_differenceInHours(
+                          toDateLocal(t),
+                          toDateLocal(F.decidedAt),
+                        ) <= 24;
+                    return (
+                      <li
+                        className="px-4 py-3 transition-colors hover:bg-panel/40"
+                        key={F.id}
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => C(F.id)}
+                            className="group/d flex min-w-0 flex-1 items-center gap-3 text-left"
+                            title="View request details"
+                          >
+                            <Avatar
+                              name={se == null ? void 0 : se.name}
+                              id={se == null ? void 0 : se.id}
+                              size="sm"
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-ink transition-colors group-hover/d:text-accent-ink">
+                                {se == null ? void 0 : se.name}
+                              </p>
+                              <p className="truncate text-xs text-ink-mute">
+                                {requestTypeLabel(F, ptoTypes)}
+                                {" · "}
+                                {requestRangeLabel(F)}
+                              </p>
+                            </div>
+                          </button>
+                          <StatusChip status={F.status} size="xs" />
+                          <div className="text-right">
+                            <p className="text-xs font-medium text-ink-soft">
+                              {F.status === "approved" ? "Approved" : "Denied"}
+                              {" by "}
+                              {tt
+                                ? "you"
+                                : firstName(pe == null ? void 0 : pe.name) ||
+                                  "—"}
+                            </p>
+                            <p className="text-[11px] tabular text-ink-mute">
+                              {F.decidedAt && fmtDateTime(F.decidedAt)}
+                            </p>
+                          </div>
+                          {Lt && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                undoDecision(F.id).then(() => {
+                                  (I(),
+                                    d("Approval reverted to pending.", {
+                                      kind: "info",
+                                    }));
+                                });
+                              }}
+                            >
+                              {"Undo"}
+                            </Button>
+                          )}
+                        </div>
+                        {F.status === "denied" && F.denialReason && (
+                          <p className="mt-2 flex gap-1.5 pl-11 text-xs text-ink-soft">
+                            <span className="shrink-0 font-semibold text-ink-mute">
+                              {"Reason"}
+                            </span>
+                            <span className="min-w-0">{F.denialReason}</span>
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </section>
           )}
         </div>
       )}
-
-      {tab === 'pending' ? (
-        pending.length === 0 ? (
-          teamScoped.length > 0 ? (
-            <EmptyState icon={SearchX} title="No matches" description={`Nothing matches “${query}”. Clear the search to see all ${teamScoped.length} pending.`} />
-          ) : (
-            <EmptyState icon={Inbox} title="Inbox zero" description="No requests are waiting on you right now." />
-          )
-        ) : (
-          <>
-            {god && (
-              <div className="sticky top-0 z-10 flex items-center justify-between rounded-card border border-line bg-card/95 px-4 py-2.5 shadow-card backdrop-blur">
-                <label className="flex items-center gap-2 text-sm font-medium text-ink-soft">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-accent"
-                    checked={selected.size === pending.length && pending.length > 0}
-                    onChange={(e) => setSelected(e.target.checked ? new Set(pending.map((r) => r.id)) : new Set())}
-                  />
-                  Select all
-                  {selected.size > 0 && <span className="text-ink-mute">· {selected.size} selected</span>}
-                </label>
-                {selected.size > 0 && (
-                  <Button variant="success" size="sm" onClick={bulkApprove}>
-                    <CheckCheck size={15} /> Approve {selected.size}
-                  </Button>
-                )}
-              </div>
-            )}
-            <div className="space-y-3">
-              {pending.map((r) => (
-                <ApprovalCard
-                  key={r.id}
-                  request={r}
-                  onApprove={handleApprove}
-                  onDeny={handleDeny}
-                  selectable={god}
-                  selected={selected.has(r.id)}
-                  onToggleSelect={() => toggleSel(r.id)}
-                  onOpenPerson={setPersonId}
-                  onOpenDetail={(req) => setDetailId(req.id)}
-                />
-              ))}
-            </div>
-          </>
-        )
-      ) : decisions.length === 0 ? (
-        <EmptyState icon={CheckCheck} title="No recent decisions" description="Approvals and denials you make appear here for 30 days." />
-      ) : (
-        <div className="space-y-2">
-          {decisions.map((r) => {
-            const undoable = r.decidedAt && differenceInHours(toDate(todayIso), toDate(r.decidedAt)) <= 24;
-            const employee = userById(r.userId);
-            return (
-              <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-card border border-line bg-card p-3.5 shadow-card">
-                <button
-                  type="button"
-                  onClick={() => setPersonId(employee?.id)}
-                  className="group/d flex min-w-0 flex-1 items-center gap-3 text-left"
-                  title="View all requests"
-                >
-                  <Avatar name={employee?.name} id={employee?.id} size="sm" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink transition-colors group-hover/d:text-accent-ink">{employee?.name}</p>
-                    <p className="text-xs text-ink-mute">
-                      {requestTypeLabel(r)} · {requestRangeLabel(r)}
-                    </p>
-                  </div>
-                </button>
-                <StatusChip status={r.status} size="xs" />
-                <span className="text-xs text-ink-mute">{r.decidedAt && fmtTime(r.decidedAt)}</span>
-                {undoable && r.status === 'approved' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      undoDecision(r.id).then(() => {
-                        setRefresh((x) => x + 1);
-                        toast('Approval reverted to pending.', { kind: 'info' });
-                      });
-                    }}
-                  >
-                    <RotateCcw size={13} /> Undo
-                  </Button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       <PersonRequestsPanel
-        userId={personId}
-        open={!!personId}
-        onClose={() => setPersonId(null)}
-        onOpenRequest={(id) => { setPersonId(null); setDetailId(id); }}
+        userId={R}
+        open={!!R}
+        onClose={() => E(null)}
+        onOpenRequest={(F) => {
+          (E(null), C(F));
+        }}
       />
       <RequestDetailModal
-        requestId={detailId}
-        open={!!detailId}
-        onClose={() => setDetailId(null)}
-        onOpenPerson={(id) => { setDetailId(null); setPersonId(id); }}
-        onChanged={() => setRefresh((x) => x + 1)}
+        requestId={T}
+        open={!!T}
+        onClose={() => C(null)}
+        onOpenPerson={(F) => {
+          (C(null), E(F));
+        }}
+        onChanged={I}
       />
-    </div>
+    </fieldset>
   );
 }
-
-function Tab({ active, onClick, count, children }) {
+export function ApprovalsSkeleton() {
   return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-btn px-3.5 py-1.5 text-sm font-semibold transition-colors ${
-        active ? 'bg-navy text-navy-fg' : 'text-ink-soft hover:bg-panel'
-      }`}
-    >
-      {children}
-      {count != null && count > 0 && (
-        <span className={`rounded-full px-1.5 text-[11px] font-bold ${active ? 'bg-accent-strong text-white' : 'bg-accent-soft text-accent-ink'}`}>
-          {count}
-        </span>
-      )}
-    </button>
+    <div className="space-y-3">
+      {Array.from({
+        length: 3,
+      }).map((e, t) => (
+        <div
+          className="rounded-card border border-line bg-card p-5 shadow-card"
+          key={t}
+        >
+          <div className="flex items-center gap-3.5">
+            <Skeleton className="h-10 w-10" rounded="rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-40" rounded="rounded" />
+              <Skeleton className="h-3 w-24" rounded="rounded" />
+            </div>
+          </div>
+          <Skeleton className="mt-4 h-4 w-56" rounded="rounded" />
+          <div className="mt-4 flex justify-end gap-2">
+            <Skeleton className="h-8 w-20" rounded="rounded-btn" />
+            <Skeleton className="h-8 w-24" rounded="rounded-btn" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
