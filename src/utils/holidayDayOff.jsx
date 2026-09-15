@@ -15,7 +15,15 @@ export const findHolidayDayOffType = (ptoTypes = []) =>
   ptoTypes.find((type) => type.isHolidayDayOff) ?? null;
 export const isHolidayDayOffLine = (line) =>
   !!(line && (line.holidayId || line.holidayName));
-// Holidays whose window holds the whole range.
+// Holidays whose window shares at least one date with the range; each gets a card on the form.
+export const holidaysOverlapping = (holidays = [], start, end) =>
+  start && end
+    ? holidays.filter(
+        (holiday) =>
+          holiday.date <= end && start <= holidayWindowEnd(holiday.date),
+      )
+    : [];
+// Holidays whose window holds the whole range, which a booking needs.
 export const holidaysCovering = (holidays = [], start, end) =>
   start && end
     ? holidays.filter(

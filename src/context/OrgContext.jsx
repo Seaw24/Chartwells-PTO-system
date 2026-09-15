@@ -105,17 +105,22 @@ export function SupabaseOrgProvider({ children: children }) {
       [n, r],
     ),
     v = React.useMemo(() => {
-      const m = t.teams,
-        x = t.users.map((T) => ({
-          id: T.id,
-          name: T.name,
-          email: T.email,
-          orgRole: T.orgRole,
-          isActive: T.isActive,
-          normalDaysOff: T.normalDaysOff,
-          updatedAt: T.updatedAt,
-          updatedBy: T.updatedBy,
-        })),
+      // Deactivated people sort after active ones wherever people or team members are listed.
+      const inactiveLast = (T, C) =>
+          Number(T.isActive === !1) - Number(C.isActive === !1),
+        m = t.teams,
+        x = t.users
+          .map((T) => ({
+            id: T.id,
+            name: T.name,
+            email: T.email,
+            orgRole: T.orgRole,
+            isActive: T.isActive,
+            normalDaysOff: T.normalDaysOff,
+            updatedAt: T.updatedAt,
+            updatedBy: T.updatedBy,
+          }))
+          .sort(inactiveLast),
         b = t.users.flatMap((T) =>
           (T.memberships ?? []).map((C) => ({
             ...C,
@@ -140,7 +145,8 @@ export function SupabaseOrgProvider({ children: children }) {
               addedAt: C.addedAt,
               membership: C,
             }))
-            .filter((C) => C.id),
+            .filter((C) => C.id)
+            .sort(inactiveLast),
         teamsOf: (T) =>
           b
             .filter((C) => C.userId === T)

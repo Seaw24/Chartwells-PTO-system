@@ -139,23 +139,28 @@ export function validateDraft({
             `${C.name} can be filed for today or yesterday at the earliest.`,
           );
       }
-      // A Holiday Day Off is one working day inside its holiday's window, one per holiday.
+      // A holiday's balance is one working day, booked inside its window.
       if (C != null && C.isHolidayDayOff) {
         const holiday = holidays.find((q) => q.id === j.holidayId);
         if (!holiday) g(S, "Pick the holiday this day off is for.");
         else {
+          const left = Math.max(
+            0,
+            1 -
+              holidayDaysUsed(holiday.id, existingRequests) -
+              f.slice(0, S).filter((q) => q.holidayId === holiday.id).length,
+          );
+          // Balance first, so a card for a long range reads "Not enough" like other types.
+          H > left &&
+            g(
+              S,
+              `${holiday.name} balance is short. This needs ${H} day${H === 1 ? "" : "s"} but only ${left} remain.`,
+            );
+          H < 1 && g(S, "Pick at least one working day.");
           holidaysCovering([holiday], start, end).length ||
             g(
               S,
               `${holiday.name} time off must fall within ${holidayWindowLabel(holiday)}.`,
-            );
-          H !== 1 && g(S, "A Holiday Day Off covers exactly one working day.");
-          holidayDaysUsed(holiday.id, existingRequests) +
-            f.slice(0, S).filter((q) => q.holidayId === holiday.id).length >=
-            1 &&
-            g(
-              S,
-              `${holiday.name} balance is short. This needs 1 day but only 0 remain.`,
             );
         }
       }

@@ -71,7 +71,10 @@ export function buildTeamTimeline({
     p = f[0].iso,
     y = f[h - 1].iso,
     g = teams.map((m) => {
-      const x = users.filter((E) => belongsToTeam(E, m.id)),
+      // Deactivated people sit below active teammates.
+      const x = users
+          .filter((E) => belongsToTeam(E, m.id))
+          .sort((E, I) => Number(E.isActive === !1) - Number(I.isActive === !1)),
         b = coverageRows.filter((E) => E.teamId === m.id),
         N = Math.max(x.length, ...b.map((E) => E.outCount + E.onShiftCount), 0),
         _ = x

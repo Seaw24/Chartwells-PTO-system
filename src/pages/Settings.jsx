@@ -394,7 +394,10 @@ export function PtoTypesSettings() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line-soft">
-            {o.map((m) => (
+            {/* Deactivated types sink to the bottom; the sort is stable, so each group keeps its order. */}
+            {[...o]
+              .sort((m, g) => Number(!m.active) - Number(!g.active))
+              .map((m) => (
               <tr className={m.active ? "" : "opacity-50"} key={m.id}>
                 <td className="px-4 py-3">
                   <span className="flex items-center gap-2 font-medium text-ink">
@@ -1632,9 +1635,12 @@ export function PeopleSettings() {
       ? a.people
       : a.people.filter((c) => a.teamsOf(c.id).some((v) => N(v.team.id))),
     be = d.trim().toLowerCase(),
+    // Deactivated people sink to the bottom as soon as they are toggled off.
     re = He.filter(
       (c) =>
         c.name.toLowerCase().includes(be) || c.email.toLowerCase().includes(be),
+    ).sort(
+      (c, v) => Number(h.active[c.id] === !1) - Number(h.active[v.id] === !1),
     ),
     C = x ? a.personById(x) : null;
   return (

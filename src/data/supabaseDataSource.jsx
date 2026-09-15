@@ -333,29 +333,24 @@ export function createSupabaseDataSource(clientOverride = null) {
     unreadCount: async () => 0,
     markNotificationRead: async () => null,
     markAllRead: async () => {},
+    // Each time off in the form becomes its own request with its own note; the database saves them
+    // together or not at all. A Holiday Day Off is routed by its holiday id.
     submitRequest: async (l) => {
-      var h;
-      const note = ((h = l.note) == null ? void 0 : h.trim()) || null,
-        holidayLine = l.lines.find((d) => d.holidayId);
-      // A Holiday Day Off is booked against one holiday through its own procedure.
-      const u = unwrap(
-        holidayLine
-          ? await client.rpc("submit_holiday_day_off", {
-              p_holiday_id: holidayLine.holidayId,
-              p_start: holidayLine.start,
-              p_end: holidayLine.end,
-              p_note: note,
-            })
-          : await client.rpc("submit_request", {
-              p_note: note,
-              p_lines: l.lines.map((d) => ({
-                type_id: d.type,
-                start: d.start,
-                end: d.end,
-              })),
-            }),
+      const ids = unwrap(
+        await client.rpc("submit_requests", {
+          p_requests: l.lines.map((d) => {
+            var h;
+            return {
+              type_id: d.type,
+              start: d.start,
+              end: d.end,
+              holiday_id: d.holidayId || null,
+              note: ((h = d.note ?? l.note) == null ? void 0 : h.trim()) || null,
+            };
+          }),
+        }),
       );
-      return requestById(u);
+      return Promise.all((ids ?? []).map(requestById));
     },
     submitWellnessRequest: async ({ days: days, note: note }) =>
       requestById(

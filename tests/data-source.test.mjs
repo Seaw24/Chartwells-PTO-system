@@ -126,7 +126,7 @@ test("bulk decisions report partial success accurately", async () => {
   assert.equal(r.failed.length, 1);
   assert.equal(r.failed[0].id, "bad");
 });
-test("a Holiday Day Off submits through its own procedure and Settings never lists its type", async () => {
+test("each time off submits as its own request in one call, and Settings never lists the holiday type", async () => {
   const api = client({
     requests: [{ id: "new", requester_id: "self", request_lines: [], status: "pending" }],
     pto_types: [
@@ -134,15 +134,23 @@ test("a Holiday Day Off submits through its own procedure and Settings never lis
       { id: "hd", name: "Holiday Day Off", is_holiday_day_off: true },
     ],
   });
-  api.rpc = async (name, args) => (api.calls.push([name, args]), { data: "new", error: null });
+  api.rpc = async (name, args) => (api.calls.push([name, args]), { data: ["new"], error: null });
   const source = createSupabaseDataSource(api);
-  await source.submitRequest({
-    note: " Request time off for Labor Day ",
-    lines: [{ type: "hd", holidayId: "labor", start: "2026-09-21", end: "2026-09-21" }],
+  const saved = await source.submitRequest({
+    lines: [
+      { type: "v", start: "2026-09-18", end: "2026-09-18", note: " Family trip " },
+      { type: "hd", holidayId: "labor", start: "2026-09-21", end: "2026-09-21", note: "" },
+    ],
   });
+  assert.equal(saved[0].id, "new");
   assert.deepEqual(api.calls.find(Array.isArray), [
-    "submit_holiday_day_off",
-    { p_holiday_id: "labor", p_start: "2026-09-21", p_end: "2026-09-21", p_note: "Request time off for Labor Day" },
+    "submit_requests",
+    {
+      p_requests: [
+        { type_id: "v", start: "2026-09-18", end: "2026-09-18", holiday_id: null, note: "Family trip" },
+        { type_id: "hd", start: "2026-09-21", end: "2026-09-21", holiday_id: "labor", note: null },
+      ],
+    },
   ]);
   assert.deepEqual((await source.getSettingsPtoTypes()).map((t) => t.id), ["v"]);
 });

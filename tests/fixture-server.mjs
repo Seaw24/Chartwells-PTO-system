@@ -288,6 +288,33 @@ http
         });
         return send(id);
       }
+      if (method === "submit_requests") {
+        // Mirrors the database: each time off becomes its own pending request.
+        const ids = body.p_requests.map((item) => {
+          const holiday = tables.holidays.find((h) => h.id === item.holiday_id);
+          const id = `00000000-0000-0000-0000-${String(count++).padStart(12, "0")}`;
+          tables.requests.unshift({
+            id,
+            requester_id: uid,
+            status: "pending",
+            note: item.note,
+            submitted_at: new Date().toISOString(),
+            decided_at: null,
+            decided_by: null,
+            request_lines: [
+              {
+                pto_type_id: holiday ? types[5].id : item.type_id,
+                start_date: item.start,
+                end_date: item.end,
+                holiday_id: holiday?.id ?? null,
+                holiday_name: holiday?.name ?? null,
+              },
+            ],
+          });
+          return id;
+        });
+        return send(ids);
+      }
       if (method === "submit_holiday_day_off") {
         const holiday = tables.holidays.find((h) => h.id === body.p_holiday_id);
         const id = `00000000-0000-0000-0000-${String(count++).padStart(12, "0")}`;

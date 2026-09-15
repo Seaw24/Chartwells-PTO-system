@@ -25,7 +25,7 @@ import { Avatar } from "../ui/Avatar.jsx";
 import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
 import { Check as Vendor_Check } from "lucide-react";
 import { CalendarHeart as Vendor_CalendarHeart } from "lucide-react";
-import { holidaysCovering } from "../../utils/holidayDayOff.jsx";
+import { holidaysOverlapping } from "../../utils/holidayDayOff.jsx";
 import { holidayDaysUsed } from "../../utils/holidayDayOff.jsx";
 import { holidayNote } from "../../utils/holidayDayOff.jsx";
 export const normalizeDraftLine = (e = {}) => ({
@@ -33,6 +33,9 @@ export const normalizeDraftLine = (e = {}) => ({
   start: e.start || "",
   end: e.end || e.start || "",
   holidayId: e.holidayId || null,
+  note: e.note || "",
+  // The note a holiday card filled in, so leaving the card only clears text nobody edited.
+  autoNote: e.autoNote || "",
 });
 export function RequestForm({
   prefill = {},
@@ -65,9 +68,6 @@ export function RequestForm({
     b = useBumpVersion(),
     [N, _] = React.useState(() => [normalizeDraftLine(prefill)]),
     [j, S] = React.useState(0),
-    [R, E] = React.useState(""),
-    // The note a holiday card filled in, so leaving the card only clears text nobody edited.
-    autoNote = React.useRef(""),
     D = React.useMemo(() => {
       const Y = N.filter((ee) => ee.start && ee.end);
       return Y.length
@@ -121,7 +121,6 @@ export function RequestForm({
     U = (T == null ? void 0 : T.normalDaysOff) ?? [0, 6],
     X = {
       lines: N,
-      note: R,
     },
     V = React.useMemo(
       () =>
@@ -157,25 +156,30 @@ export function RequestForm({
       const holiday = next.holidayId
         ? holidays.find((ve) => ve.id === next.holidayId)
         : null;
-      // A holiday card fits one working day inside its window; moving the dates off it drops the pick.
+      // Moving the dates clear of a holiday's window removes its card, so the pick goes with it.
       next.holidayId &&
         !(
-          holiday &&
-          holidaysCovering([holiday], next.start, next.end).length &&
-          lineDays(next, U) === 1
+          holiday && holidaysOverlapping([holiday], next.start, next.end).length
         ) &&
         (next = {
           ...next,
           type: "",
           holidayId: null,
         });
-      // Picking a holiday card fills in the note; leaving it clears the note unless it was edited.
+      // Picking a holiday card fills in this time off's note; leaving it clears the note unless edited.
       if (next.holidayId && next.holidayId !== prev.holidayId)
-        (!R.trim() || R === autoNote.current) &&
-          ((autoNote.current = holidayNote(holiday.name)),
-          E(autoNote.current));
-      else if (!next.holidayId && prev.holidayId && R === autoNote.current)
-        ((autoNote.current = ""), E(""));
+        (!prev.note.trim() || prev.note === prev.autoNote) &&
+          (next = {
+            ...next,
+            note: holidayNote(holiday.name),
+            autoNote: holidayNote(holiday.name),
+          });
+      else if (!next.holidayId && prev.holidayId && prev.note === prev.autoNote)
+        next = {
+          ...next,
+          note: "",
+          autoNote: "",
+        };
       _((Pe) => Pe.map((ve, _e) => (_e === Y ? next : ve)));
     },
     ae = (Y) => {
@@ -199,7 +203,7 @@ export function RequestForm({
           const ee =
             N.length === 1
               ? `Request submitted for ${formatDateRange(N[0].start, N[0].end)}.`
-              : `Request submitted with ${N.length} PTO lines.`;
+              : `${N.length} requests submitted.`;
           (x(ee, {
             kind: "success",
           }),
@@ -254,36 +258,36 @@ export function RequestForm({
             />
           );
         })}
-        {he && !N.some((Y) => Y.holidayId) && (
+        {he && (
           <button
             type="button"
             onClick={fe}
-            className="press flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line py-2.5 text-sm font-semibold text-ink-soft hover:border-ink-mute/50 hover:bg-panel hover:text-ink"
+            className="press flex w-full items-center gap-3 rounded-card border border-line bg-card px-3.5 py-3 text-left shadow-card hover:border-ink-mute/40 hover:bg-panel/60 animate-fade-in"
           >
-            <Vendor_Plus size={15} />
-            {" Add another type"}
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-btn bg-accent-soft text-accent-ink">
+              <Vendor_Plus size={16} strokeWidth={2.5} aria-hidden="true" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-ink">
+                {"Add another time off"}
+              </span>
+              <span className="block text-[11px] leading-snug text-ink-mute">
+                {"Different type or dates? Each one is sent as its own request."}
+              </span>
+            </span>
           </button>
         )}
       </div>
-      {N.some((Y) => Y.type && Y.start && Y.end) && (
-        <section>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="eyebrow">{"Note for your approver"}</h3>
-            <span className="text-[11px] text-ink-mute">{"Optional"}</span>
-          </div>
-          <textarea
-            value={R}
-            onChange={(Y) => E(Y.target.value)}
-            rows={2}
-            placeholder="Add context for your approver..."
-            className="w-full resize-none rounded-btn border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-ink-mute focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
-          />
-        </section>
-      )}
       <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
         <p className="min-w-0 text-sm">
           {A > 0 ? (
             <span className="text-ink-soft">
+              {N.length > 1 && (
+                <>
+                  <span className="font-bold tabular text-ink">{N.length}</span>
+                  {" requests · "}
+                </>
+              )}
               <span className="font-bold tabular text-ink">{A}</span>
               {" day"}
               {A === 1 ? "" : "s"}
@@ -304,7 +308,7 @@ export function RequestForm({
             </Button>
           )}
           <Button type="submit" variant="primary" disabled={!K}>
-            {"Submit request"}
+            {N.length > 1 ? `Submit ${N.length} requests` : "Submit request"}
           </Button>
         </div>
       </div>
@@ -342,13 +346,14 @@ export function RequestLineEditor({
     } = ctx,
     j = !!(line.start && line.end),
     S = j ? lineDays(line, normalDaysOff) : 0,
-    // Holiday cards show for a single-line request of one working day inside a holiday's window.
+    // Any holiday whose window shares a date with the range gets a card; its balance of 1 greys it
+    // out when the dates need more, like any other short balance.
     holidayOptions = React.useMemo(
       () =>
-        j && count === 1 && holidayDayOffType && S === 1
-          ? holidaysCovering(holidays, line.start, line.end)
+        j && holidayDayOffType
+          ? holidaysOverlapping(holidays, line.start, line.end)
           : [],
-      [j, count, holidayDayOffType, S, holidays, line.start, line.end],
+      [j, holidayDayOffType, holidays, line.start, line.end],
     ),
     R = React.useMemo(() => {
       var $;
@@ -531,7 +536,14 @@ export function RequestLineEditor({
           )}
           {C.length > 0 && <ConflictWarning conflicts={C} />}
           <section>
-            <h3 className="eyebrow mb-2.5">{"What type of time off?"}</h3>
+            <h3 className={`eyebrow ${count === 1 ? "" : "mb-2.5"}`}>
+              {"What type of time off?"}
+            </h3>
+            {count === 1 && (
+              <p className="mb-2.5 mt-1 text-[11px] leading-snug text-ink-mute">
+                {"Taking more than one type? Pick one, then add the next below."}
+              </p>
+            )}
             <div className="space-y-2">
               {holidayOptions.map((h) => (
                 <TypeOption
@@ -593,6 +605,30 @@ export function RequestLineEditor({
               <Vendor_TriangleAlert size={13} className="mt-0.5 shrink-0" />
               {I.reason}
             </p>
+          )}
+          {line.type && (
+            <section>
+              <div className="mb-2 flex items-baseline justify-between">
+                <h3 className="eyebrow">{"Note for your approver"}</h3>
+                <span className="text-[11px] text-ink-mute">{"Optional"}</span>
+              </div>
+              <textarea
+                value={line.note}
+                onChange={(P) =>
+                  onChange({
+                    note: P.target.value,
+                  })
+                }
+                rows={2}
+                placeholder="Add context for your approver..."
+                aria-label={
+                  count > 1
+                    ? `Note for time off ${index + 1}`
+                    : "Note for your approver"
+                }
+                className="w-full resize-none rounded-btn border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-ink-mute focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+              />
+            </section>
           )}
         </div>
       )}
@@ -798,9 +834,12 @@ export function RequestLineSummary({
   onRemove: onRemove,
   canRemove: canRemove,
 }) {
-  const { ptoTypeById: ptoTypeById } = useCatalog(),
+  const { ptoTypeById: ptoTypeById, holidays: holidays } = useCatalog(),
     l = ptoTypeById(line.type),
-    u = lineDays(line, normalDaysOff);
+    u = lineDays(line, normalDaysOff),
+    holidayName = line.holidayId
+      ? holidays.find((h) => h.id === line.holidayId)?.name
+      : null;
   return (
     <div className="lift flex items-center gap-2.5 rounded-card border border-line bg-card px-3 py-2.5 shadow-card">
       <button
@@ -821,10 +860,22 @@ export function RequestLineSummary({
           <span className="block truncate text-sm font-semibold text-ink">
             {formatDateRange(line.start, line.end)}
           </span>
-          <span className="block text-[11px] text-ink-mute tabular">
+          <span className="block truncate text-[11px] text-ink-mute tabular">
             {u}
             {" charged day"}
-            {u === 1 ? "" : "s"} {l ? `of ${l.name.toLowerCase()}` : ""}
+            {u === 1 ? "" : "s"}{" "}
+            {holidayName
+              ? `of ${holidayName}`
+              : l
+                ? `of ${l.name.toLowerCase()}`
+                : ""}
+            {line.note && (
+              <span className="italic text-ink-soft">
+                {" · “"}
+                {line.note}
+                {"”"}
+              </span>
+            )}
           </span>
         </span>
       </button>

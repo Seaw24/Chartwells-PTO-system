@@ -81,6 +81,12 @@ test("holiday windows run from the holiday through 30 days after it", () => {
     ["labor", "harvest"],
   );
   assert.deepEqual(holiday.holidaysCovering([labor], "2026-10-07", "2026-10-08"), []);
+  assert.deepEqual(
+    holiday.holidaysOverlapping([labor, harvest], "2026-10-07", "2026-10-12").map((h) => h.id),
+    ["labor", "harvest"],
+  );
+  assert.deepEqual(holiday.holidaysOverlapping([labor], "2026-10-08", "2026-10-09"), []);
+  assert.deepEqual(holiday.holidaysOverlapping([labor], "2026-09-01", "2026-09-07").map((h) => h.id), ["labor"]);
   assert.deepEqual(holiday.holidaysCovering([labor], "2026-09-06", "2026-09-06"), []);
   assert.equal(holiday.holidayNote("Labor Day"), "Request time off for Labor Day");
 });
@@ -97,7 +103,10 @@ test("a holiday allows one pending or approved working day off", () => {
   const booked = { status: "pending", lines: [dayOff("2026-09-15")] };
   assert.match(check([dayOff("2026-09-21")], [booked]).errors[0], /balance is short/);
   assert.ok(check([dayOff("2026-09-21")], [{ ...booked, status: "cancelled" }]).ok);
-  assert.match(check([dayOff("2026-09-21", "2026-09-22")]).errors[0], /exactly one working day/);
+  assert.match(
+    check([dayOff("2026-09-21", "2026-09-22")]).errors[0],
+    /balance is short. This needs 2 days but only 1 remain/,
+  );
   assert.match(check([dayOff("2026-10-08")]).errors[0], /must fall within/);
 });
 test("a booked holiday day off reads as its holiday and turns stale when the holiday is removed or moved", () => {

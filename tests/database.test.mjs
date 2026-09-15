@@ -22,6 +22,9 @@ try {
   await db.exec(
     fs.readFileSync("supabase/migrations/202609140002_holiday_day_off.sql", "utf8"),
   );
+  await db.exec(
+    fs.readFileSync("supabase/migrations/202609150001_submit_requests.sql", "utf8"),
+  );
 } catch (error) {
   console.error(error.message, error.position);
   process.exit(1);
@@ -339,6 +342,36 @@ test("renaming a holiday renames its bookings, and a removed or moved holiday bl
     "Founders Week",
   );
   await as(employee, "select cancel_request($1)", [holidayDayOff]);
+});
+test("several time offs submit as separate requests, all or nothing", async () => {
+  const [a, b] = (
+    await as(admin, "select d::date::text as day from generate_series(current_date+60,current_date+75,interval '1 day') d where extract(dow from d) between 1 and 5 order by d limit 2")
+  ).rows.map((r) => r.day);
+  const count = async () =>
+    Number((await as(employee, "select count(*) n from requests where requester_id=$1", [employee])).rows[0].n);
+  const before = await count();
+  await assert.rejects(
+    as(employee, "select submit_requests($1::jsonb)", [
+      JSON.stringify([
+        { type_id: type, start: a, end: a, note: "Trip" },
+        { type_id: type, start: a, end: a, note: "Same day" },
+      ]),
+    ]),
+    /Time off 2: .*overlap/i,
+  );
+  assert.equal(await count(), before);
+  const made = await as(employee, "select cardinality(submit_requests($1::jsonb)) n", [
+    JSON.stringify([
+      { type_id: type, start: a, end: a, note: "Trip" },
+      { type_id: wellness, start: b, end: b, note: "Rest" },
+    ]),
+  ]);
+  assert.equal(Number(made.rows[0].n), 2);
+  assert.equal(await count(), before + 2);
+  assert.deepEqual(
+    (await as(employee, "select note from requests where requester_id=$1 and note in ('Trip','Rest') order by note", [employee])).rows.map((r) => r.note),
+    ["Rest", "Trip"],
+  );
 });
 test("inactive accounts cannot read private data", async () => {
   await as(admin, "select set_profile_active($1,false)", [employee]);
