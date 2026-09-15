@@ -805,7 +805,7 @@ export function HolidaySettings() {
     <div className="space-y-4">
       <SettingsHeader
         title="Holidays"
-        desc="The fixed company holidays that do not count as charged PTO."
+        desc="Company holidays. Each one opens a 30-day window to book one Holiday Day Off."
       />
       <div className="flex gap-1 rounded-card border border-line bg-card p-3">
         {["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"].map(
@@ -1032,7 +1032,7 @@ export function BlackoutSettings() {
       >
         {({ close: close }) => (
           <NewBlackoutForm
-            ptoTypes={t.ptoTypes}
+            ptoTypes={t.balanceTypes}
             onAdd={async (d) => {
               (await l(d)) && close();
             }}
@@ -1413,7 +1413,7 @@ export function PeopleSettings() {
     n = useToast(),
     a = useOrg(),
     o = useCatalog(),
-    r = o.ptoTypes,
+    r = o.balanceTypes,
     {
       getGrants: getGrants,
       setGrant: setGrant,
@@ -2774,7 +2774,7 @@ export function ReadOnlySettings() {
     [h, s] = React.useState(l[0].id),
     d =
       {
-        types: ptoTypes,
+        types: ptoTypes.filter((type) => !type.isHolidayDayOff),
         holidays: holidays,
         blackout: blackouts,
         teams: teams,

@@ -9,6 +9,8 @@ export const mapRequest = (e) => ({
     type: t.pto_type_id,
     start: t.start_date,
     end: t.end_date,
+    holidayId: t.holiday_id ?? null,
+    holidayName: t.holiday_name ?? null,
   })),
   status: e.status,
   note: e.note ?? "",
@@ -16,6 +18,10 @@ export const mapRequest = (e) => ({
   decidedAt: e.decided_at,
   denialReason: e.denial_reason,
   submittedAt: e.submitted_at,
+  kind: e.kind ?? "time_off",
+  grantTypeId: e.grant_type_id ?? null,
+  grantDays: e.grant_days ?? null,
+  grantYear: e.grant_year ?? null,
 });
 export const mapProfile = (e) => {
   var r;
@@ -53,6 +59,8 @@ export const mapPtoType = (e) => ({
   restrictedDates: e.requires_window,
   allowBackdate: e.allow_backdate,
   isActive: e.is_active,
+  isWellness: !!e.is_wellness,
+  isHolidayDayOff: !!e.is_holiday_day_off,
   createdAt: e.created_at,
   createdBy: e.created_by,
   updatedAt: e.updated_at,

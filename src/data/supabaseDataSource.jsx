@@ -34,6 +34,28 @@ export function createSupabaseDataSource(clientOverride = null) {
             .single(),
         ),
       ),
+    decide = async (requestId, approve, reason) => {
+      // Wellness grants have no dated lines, so they use their own decision procedure.
+      const row = unwrap(
+        await client
+          .from("requests")
+          .select("*")
+          .eq("id", requestId)
+          .maybeSingle(),
+      );
+      unwrap(
+        await client.rpc(
+          (row == null ? void 0 : row.kind) === "wellness_grant"
+            ? "decide_wellness_request"
+            : "decide_request",
+          {
+            p_request_id: requestId,
+            p_approve: approve,
+            p_reason: reason,
+          },
+        ),
+      );
+    },
     getRequests = async () =>
       (
         unwrap(
@@ -54,17 +76,13 @@ export function createSupabaseDataSource(clientOverride = null) {
       queryClient.fetchQuery({
         queryKey: ["data", "working-calendar", userId],
         queryFn: async () => {
-          const [profile, holidays] = await Promise.all([
-            client
-              .from("profiles")
-              .select("normal_days_off")
-              .eq("id", userId)
-              .single(),
-            client.from("holidays").select("date"),
-          ]);
+          const profile = await client
+            .from("profiles")
+            .select("normal_days_off")
+            .eq("id", userId)
+            .single();
           return {
             normalDaysOff: unwrap(profile).normal_days_off ?? [0, 6],
-            holidays: (unwrap(holidays) ?? []).map((row) => row.date),
           };
         },
       }),
@@ -122,7 +140,6 @@ export function createSupabaseDataSource(clientOverride = null) {
                 end: line.end > `${year}-12-31` ? `${year}-12-31` : line.end,
               },
               calendar.normalDaysOff,
-              calendar.holidays,
             ),
           0,
         );
@@ -261,10 +278,11 @@ export function createSupabaseDataSource(clientOverride = null) {
             .order("name"),
         ) ?? []
       ).map(mapPtoType),
+    // Holiday Day Off is managed through holidays, so Settings never lists it as a type.
     getSettingsPtoTypes: async () =>
-      (
-        unwrap(await client.from("pto_types").select("*").order("name")) ?? []
-      ).map(mapPtoType),
+      (unwrap(await client.from("pto_types").select("*").order("name")) ?? [])
+        .map(mapPtoType)
+        .filter((type) => !type.isHolidayDayOff),
     getHolidays: async () =>
       (
         unwrap(await client.from("holidays").select("*").order("date")) ?? []
@@ -317,18 +335,37 @@ export function createSupabaseDataSource(clientOverride = null) {
     markAllRead: async () => {},
     submitRequest: async (l) => {
       var h;
+      const note = ((h = l.note) == null ? void 0 : h.trim()) || null,
+        holidayLine = l.lines.find((d) => d.holidayId);
+      // A Holiday Day Off is booked against one holiday through its own procedure.
       const u = unwrap(
-        await client.rpc("submit_request", {
-          p_note: ((h = l.note) == null ? void 0 : h.trim()) || null,
-          p_lines: l.lines.map((d) => ({
-            type_id: d.type,
-            start: d.start,
-            end: d.end,
-          })),
-        }),
+        holidayLine
+          ? await client.rpc("submit_holiday_day_off", {
+              p_holiday_id: holidayLine.holidayId,
+              p_start: holidayLine.start,
+              p_end: holidayLine.end,
+              p_note: note,
+            })
+          : await client.rpc("submit_request", {
+              p_note: note,
+              p_lines: l.lines.map((d) => ({
+                type_id: d.type,
+                start: d.start,
+                end: d.end,
+              })),
+            }),
       );
       return requestById(u);
     },
+    submitWellnessRequest: async ({ days: days, note: note }) =>
+      requestById(
+        unwrap(
+          await client.rpc("submit_wellness_request", {
+            p_days: days,
+            p_note: (note == null ? void 0 : note.trim()) || null,
+          }),
+        ),
+      ),
     cancelRequest: async (l) => (
       unwrap(
         await client.rpc("cancel_request", {
@@ -337,39 +374,14 @@ export function createSupabaseDataSource(clientOverride = null) {
       ),
       requestById(l)
     ),
-    approveRequest: async (l) => (
-      unwrap(
-        await client.rpc("decide_request", {
-          p_request_id: l,
-          p_approve: !0,
-          p_reason: null,
-        }),
-      ),
-      requestById(l)
-    ),
-    denyRequest: async (l, u) => (
-      unwrap(
-        await client.rpc("decide_request", {
-          p_request_id: l,
-          p_approve: !1,
-          p_reason: u,
-        }),
-      ),
-      requestById(l)
-    ),
+    approveRequest: async (l) => (await decide(l, !0, null), requestById(l)),
+    denyRequest: async (l, u) => (await decide(l, !1, u), requestById(l)),
     approveMany: async (l) => {
       const u = [],
         h = [];
       for (const d of l)
         try {
-          (unwrap(
-            await client.rpc("decide_request", {
-              p_request_id: d,
-              p_approve: !0,
-              p_reason: null,
-            }),
-          ),
-            u.push(await requestById(d)));
+          (await decide(d, !0, null), u.push(await requestById(d)));
         } catch (f) {
           h.push({
             id: d,

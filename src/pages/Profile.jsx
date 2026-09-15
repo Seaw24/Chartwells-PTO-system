@@ -19,7 +19,8 @@ import { UserTeams } from "../utils/organization.jsx";
 import { BalanceCards } from "../components/requests/BalanceCards.jsx";
 import { EmptyState } from "../components/ui/EmptyState.jsx";
 import { CalendarX as Vendor_CalendarX } from "lucide-react";
-import { requestLines } from "../utils/requestHelpers.jsx";
+import { requestPrimaryTypeId } from "../utils/requestHelpers.jsx";
+import { isWellnessGrant } from "../utils/requestHelpers.jsx";
 import { PtoTypeIcon } from "../components/ui/PtoTypeIcon.jsx";
 import { requestTypeLabel } from "../utils/requestHelpers.jsx";
 import { requestRangeLabel } from "../utils/requestHelpers.jsx";
@@ -28,7 +29,6 @@ import { TeamDrawer } from "../components/team/TeamDrawer.jsx";
 export function Profile() {
   const {
       ptoTypes: ptoTypes,
-      holidays: holidays,
       ptoTypeById: ptoTypeById,
     } = useCatalog(),
     r = useCurrentUser(),
@@ -65,7 +65,7 @@ export function Profile() {
   const { history: history, normalDaysOff: normalDaysOff } = u,
     m = history
       .filter((x) => x.status === "approved")
-      .reduce((x, b) => x + requestDays(b, normalDaysOff, holidays), 0);
+      .reduce((x, b) => x + requestDays(b, normalDaysOff), 0);
   return (
     <div className="space-y-7">
       <div className="relative overflow-hidden rounded-card bg-navy shadow-raised">
@@ -152,8 +152,7 @@ export function Profile() {
             <ul className="divide-y divide-line-soft">
               {history.map((x) => {
                 var j, S;
-                const b = requestLines(x),
-                  N = ptoTypeById((j = b[0]) == null ? void 0 : j.type),
+                const N = ptoTypeById(requestPrimaryTypeId(x)),
                   _ = (N == null ? void 0 : N.color) || "var(--c-ink-mute)";
                 return (
                   <li
@@ -168,7 +167,7 @@ export function Profile() {
                       }}
                     >
                       <PtoTypeIcon
-                        typeId={(S = b[0]) == null ? void 0 : S.type}
+                        typeId={requestPrimaryTypeId(x)}
                         size={16}
                       />
                     </span>
@@ -181,7 +180,9 @@ export function Profile() {
                       </p>
                     </div>
                     <span className="text-xs text-ink-mute tabular">
-                      {requestDays(x, normalDaysOff, holidays)}
+                      {isWellnessGrant(x)
+                        ? `+${x.grantDays}`
+                        : requestDays(x, normalDaysOff)}
                       {"d"}
                     </span>
                     <StatusChip status={x.status} size="xs" />

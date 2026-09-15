@@ -1,3 +1,4 @@
+import { requestHolidayIssue } from "../utils/holidayDayOff.jsx";
 import { useResource } from "../hooks/useResource.jsx";
 import { useCurrentUser } from "../context/AuthContext.jsx";
 import { useToday } from "../data/today.jsx";
@@ -67,6 +68,7 @@ export function Approvals() {
     } = useDataSource(),
     {
       ptoTypes: ptoTypes,
+      holidays: holidays,
       userById: userById,
       teamById: teamById,
     } = useCatalog(),
@@ -292,6 +294,8 @@ export function Approvals() {
           });
         b(new Set(result.failed.map((item) => item.id)));
       });
+  // A Holiday Day Off whose holiday was removed or moved can't be approved, so bulk select skips it.
+  const approvable = fe.filter((F) => !requestHolidayIssue(F, holidays));
   return (
     <fieldset
       disabled={saving}
@@ -394,11 +398,11 @@ export function Approvals() {
                     <input
                       type="checkbox"
                       className="h-4 w-4 accent-accent"
-                      checked={x.size === fe.length && fe.length > 0}
+                      checked={x.size === approvable.length && approvable.length > 0}
                       onChange={(F) =>
                         b(
                           F.target.checked
-                            ? new Set(fe.map((se) => se.id))
+                            ? new Set(approvable.map((se) => se.id))
                             : new Set(),
                         )
                       }

@@ -126,3 +126,44 @@ test("bulk decisions report partial success accurately", async () => {
   assert.equal(r.failed.length, 1);
   assert.equal(r.failed[0].id, "bad");
 });
+test("a Holiday Day Off submits through its own procedure and Settings never lists its type", async () => {
+  const api = client({
+    requests: [{ id: "new", requester_id: "self", request_lines: [], status: "pending" }],
+    pto_types: [
+      { id: "v", name: "Vacation" },
+      { id: "hd", name: "Holiday Day Off", is_holiday_day_off: true },
+    ],
+  });
+  api.rpc = async (name, args) => (api.calls.push([name, args]), { data: "new", error: null });
+  const source = createSupabaseDataSource(api);
+  await source.submitRequest({
+    note: " Request time off for Labor Day ",
+    lines: [{ type: "hd", holidayId: "labor", start: "2026-09-21", end: "2026-09-21" }],
+  });
+  assert.deepEqual(api.calls.find(Array.isArray), [
+    "submit_holiday_day_off",
+    { p_holiday_id: "labor", p_start: "2026-09-21", p_end: "2026-09-21", p_note: "Request time off for Labor Day" },
+  ]);
+  assert.deepEqual((await source.getSettingsPtoTypes()).map((t) => t.id), ["v"]);
+});
+test("wellness grant decisions use their own procedure", async () => {
+  const api = client({
+    requests: [
+      {
+        id: "w",
+        requester_id: "other",
+        request_lines: [],
+        status: "pending",
+        kind: "wellness_grant",
+      },
+      { id: "t", requester_id: "other", request_lines: [], status: "pending" },
+    ],
+  });
+  const source = createSupabaseDataSource(api);
+  await source.approveRequest("w");
+  await source.denyRequest("t", "Coverage");
+  assert.deepEqual(
+    api.calls.filter(Array.isArray).map(([name]) => name),
+    ["decide_wellness_request", "decide_request"],
+  );
+});

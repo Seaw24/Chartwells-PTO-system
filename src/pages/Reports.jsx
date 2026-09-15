@@ -387,7 +387,7 @@ export function ReportsPage() {
       users: users,
       teams: teams,
       ptoTypes: ptoTypes,
-      holidays: holidays,
+      balanceTypes: balanceTypes,
       userById: userById,
       teamById: teamById,
       ptoTypeById: ptoTypeById,
@@ -403,7 +403,7 @@ export function ReportsPage() {
           id: user.id,
           normalDaysOff: await normalDaysOffFor(user.id),
           balances: await Promise.all(
-            ptoTypes.map(async (type) => ({
+            balanceTypes.map(async (type) => ({
               id: type.id,
               used: await usedFor(user.id, type.id),
               grant: await grantFor(user.id, type.id),
@@ -466,7 +466,6 @@ export function ReportsPage() {
           _[j][ptoTypeById(T.type)?.name ?? "Retired type"] += lineDays(
             T,
             p.normalDaysOffByUser[T.userId],
-            holidays,
           );
         }),
         _
@@ -485,7 +484,7 @@ export function ReportsPage() {
               })
               .reduce(
                 (E, I) =>
-                  E + lineDays(I, p.normalDaysOffByUser[I.userId], holidays),
+                  E + lineDays(I, p.normalDaysOffByUser[I.userId]),
                 0,
               );
           return {
@@ -502,7 +501,7 @@ export function ReportsPage() {
             liability: [],
             liabilityTotal: 0,
           };
-        const _ = ptoTypes.map((T) => {
+        const _ = balanceTypes.map((T) => {
           const j = users.reduce(
             (E, I) =>
               E +
@@ -572,10 +571,14 @@ export function ReportsPage() {
           null
             ? void 0
             : U.name) || "",
-          (q = ptoTypeById(D.type)) == null ? void 0 : q.name,
+          D.line.holidayName
+            ? `${ptoTypeById(D.type)?.name} (${D.line.holidayName})`
+            : (q = ptoTypeById(D.type)) == null
+              ? void 0
+              : q.name,
           D.start,
           D.end,
-          lineDays(D, p.normalDaysOffByUser[D.userId], holidays),
+          lineDays(D, p.normalDaysOffByUser[D.userId]),
           D.status,
           ((F = userById(D.decidedBy)) == null ? void 0 : F.name) || "",
         ];

@@ -307,7 +307,7 @@ export function TeamPage() {
       normalDaysOffFor: normalDaysOffFor,
       setNormalDaysOff: setNormalDaysOff,
     } = useDataSource(),
-    { ptoTypes: ptoTypes } = useCatalog(),
+    { ptoTypes: ptoTypes, balanceTypes: balanceTypes } = useCatalog(),
     { openRequest: openRequest } = useRequestModal(),
     p = Vendor_useNavigate(),
     y = useToast(),
@@ -339,7 +339,7 @@ export function TeamPage() {
         normalDaysOffFor(v.id),
         getHolidays(),
         Promise.all(
-          ptoTypes.map(async (type) => {
+          balanceTypes.map(async (type) => {
             const [remaining, used, grant] = await Promise.all([
               balanceFor(v.id, type.id),
               usedFor(v.id, type.id),

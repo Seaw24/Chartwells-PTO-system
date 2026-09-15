@@ -5,6 +5,9 @@ import { toDateLocal } from "./dateHelpers.jsx";
 import { lineDays } from "./requestHelpers.jsx";
 import { toISO } from "./dateHelpers.jsx";
 import { lineEntriesForRequest } from "./requestHelpers.jsx";
+import { holidaysCovering } from "./holidayDayOff.jsx";
+import { holidayWindowLabel } from "./holidayDayOff.jsx";
+import { holidayDaysUsed } from "./holidayDayOff.jsx";
 export function windowsForType(e, t = []) {
   const n = t.filter((r) => r.typeId === e);
   return n.length ? n : null;
@@ -120,7 +123,7 @@ export function validateDraft({
         g(S, "End date is before the start date.");
         return;
       }
-      const H = lineDays(j, normalDaysOff, holidays);
+      const H = lineDays(j, normalDaysOff);
       if (
         ((p[S].days = H),
         type && (y[type] = (y[type] || 0) + H),
@@ -135,6 +138,26 @@ export function validateDraft({
             S,
             `${C.name} can be filed for today or yesterday at the earliest.`,
           );
+      }
+      // A Holiday Day Off is one working day inside its holiday's window, one per holiday.
+      if (C != null && C.isHolidayDayOff) {
+        const holiday = holidays.find((q) => q.id === j.holidayId);
+        if (!holiday) g(S, "Pick the holiday this day off is for.");
+        else {
+          holidaysCovering([holiday], start, end).length ||
+            g(
+              S,
+              `${holiday.name} time off must fall within ${holidayWindowLabel(holiday)}.`,
+            );
+          H !== 1 && g(S, "A Holiday Day Off covers exactly one working day.");
+          holidayDaysUsed(holiday.id, existingRequests) +
+            f.slice(0, S).filter((q) => q.holidayId === holiday.id).length >=
+            1 &&
+            g(
+              S,
+              `${holiday.name} balance is short. This needs 1 day but only 0 remain.`,
+            );
+        }
       }
       C != null &&
         C.restrictedDates &&

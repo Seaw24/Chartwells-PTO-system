@@ -30,6 +30,13 @@ import { lineDays } from "../../utils/requestHelpers.jsx";
 import { Users as Vendor_Users } from "lucide-react";
 import { Button } from "../ui/Button.jsx";
 import { CalendarSearch as Vendor_CalendarSearch } from "lucide-react";
+import { isWellnessGrant } from "../../utils/requestHelpers.jsx";
+import { WellnessPill } from "./Wellness.jsx";
+import { wellnessCardStyle } from "./Wellness.jsx";
+import { useHolidayIssue } from "./HolidayDayOff.jsx";
+import { HolidayIssueNotice } from "./HolidayDayOff.jsx";
+import { HolidayBalance } from "./HolidayDayOff.jsx";
+import { holidayIssueCardStyle } from "./HolidayDayOff.jsx";
 export function WS(e = "") {
   const t = e.trim().split(/\s+/).filter(Boolean);
   return t.length
@@ -88,7 +95,12 @@ export function StatusChip({ status: status, size = "sm", className = "" }) {
     </span>
   );
 }
-export function PtoTypePill({ typeId: typeId, size = "sm", className = "" }) {
+export function PtoTypePill({
+  typeId: typeId,
+  label: label,
+  size = "sm",
+  className = "",
+}) {
   const { ptoTypeById: ptoTypeById } = useCatalog(),
     s = ptoTypeById(typeId);
   if (!s) return null;
@@ -112,7 +124,7 @@ export function PtoTypePill({ typeId: typeId, size = "sm", className = "" }) {
         }}
         aria-hidden="true"
       />
-      {s.name}
+      {label || s.name}
     </span>
   );
 }
@@ -179,6 +191,7 @@ export function RequestDetailModal({
     },
     open && !!requestId,
   );
+  const holidayIssue = useHolidayIssue(b?.req);
   if (
     (React.useEffect(() => {
       (j(!1), R(""));
@@ -207,6 +220,7 @@ export function RequestDetailModal({
       teamId: D == null ? void 0 : D.team,
     }),
     X = req.status === "pending" && canDecideRequest(u, req, users),
+    G = isWellnessGrant(req),
     V = () => {
       (onClose == null || onClose(), x(`/calendar?req=${req.id}`));
     },
@@ -267,29 +281,55 @@ export function RequestDetailModal({
           </button>
           <StatusChip status={req.status} />
         </div>
-        <dl className="space-y-2.5 rounded-card border border-line bg-surface/60 px-4 py-3 text-sm">
+        <dl
+          className="space-y-2.5 rounded-card border border-line bg-surface/60 px-4 py-3 text-sm"
+          style={
+            G
+              ? wellnessCardStyle
+              : holidayIssue
+                ? holidayIssueCardStyle
+                : void 0
+          }
+        >
           <Component_ss label="Request">
-            <span className="font-medium text-ink">
-              {requestTypeLabel(req, ptoTypes)}
-            </span>
+            {G ? (
+              <WellnessPill size="xs" />
+            ) : (
+              <span className="font-medium text-ink">
+                {requestTypeLabel(req, ptoTypes)}
+              </span>
+            )}
           </Component_ss>
-          <Component_ss label="Dates">
-            <span className="font-medium text-ink">
+          <Component_ss label={G ? "Days" : "Dates"}>
+            <span className="font-medium text-ink tabular">
               {requestRangeLabel(req)}
             </span>
           </Component_ss>
-          <Component_ss label="Length">
-            <span className="tabular text-ink">
-              {P}
-              {" charged day"}
-              {P === 1 ? "" : "s"}
-            </span>
-          </Component_ss>
+          {!G && (
+            <Component_ss label="Length">
+              <span className="tabular text-ink">
+                {P}
+                {" charged day"}
+                {P === 1 ? "" : "s"}
+              </span>
+            </Component_ss>
+          )}
           <Component_ss label="Balance">
             <span className="text-ink-soft">
               {Z.map((A) => {
-                const B = ptoTypeById(A);
-                return (
+                const B = ptoTypeById(A),
+                  holidayLine =
+                    (B == null ? void 0 : B.isHolidayDayOff) &&
+                    q.find((ae) => ae.type === A);
+                return holidayLine ? (
+                  <span className="ml-2 first:ml-0" key={A}>
+                    <HolidayBalance
+                      line={holidayLine}
+                      requests={requests}
+                      request={req}
+                    />
+                  </span>
+                ) : (
                   <span className="ml-2 first:ml-0" key={A}>
                     <b className="text-ink tabular">
                       {balances[A]}
@@ -297,6 +337,14 @@ export function RequestDetailModal({
                       {grants[A]}
                     </b>{" "}
                     {B == null ? void 0 : B.name.toLowerCase()}
+                    {G && req.status === "pending" && (
+                      <span className="ml-1.5 font-semibold tabular text-success-ink">
+                        {"→ "}
+                        {balances[A] + req.grantDays}
+                        {"/"}
+                        {grants[A] + req.grantDays}
+                      </span>
+                    )}
                   </span>
                 );
               })}
@@ -317,6 +365,7 @@ export function RequestDetailModal({
             </Component_ss>
           )}
         </dl>
+        <HolidayIssueNotice issue={holidayIssue} status={req.status} />
         {q.length > 1 && (
           <div className="space-y-1.5 rounded-card border border-line bg-card px-3 py-2 text-sm">
             {q.map((A, B) => (
@@ -338,17 +387,19 @@ export function RequestDetailModal({
             ))}
           </div>
         )}
-        <div
-          className={`flex items-center gap-2 rounded-card px-3 py-2 text-xs ${U.length ? "bg-warning-soft text-ink-soft" : "bg-panel text-ink-mute"}`}
-        >
-          <Vendor_Users
-            size={14}
-            className={U.length ? "text-warning-ink" : "text-ink-mute"}
-          />
-          {U.length === 0
-            ? "No teammates are off during these dates."
-            : `${U.map((A) => firstName(A.user.name)).join(", ")} also off then.`}
-        </div>
+        {!G && (
+          <div
+            className={`flex items-center gap-2 rounded-card px-3 py-2 text-xs ${U.length ? "bg-warning-soft text-ink-soft" : "bg-panel text-ink-mute"}`}
+          >
+            <Vendor_Users
+              size={14}
+              className={U.length ? "text-warning-ink" : "text-ink-mute"}
+            />
+            {U.length === 0
+              ? "No teammates are off during these dates."
+              : `${U.map((A) => firstName(A.user.name)).join(", ")} also off then.`}
+          </div>
+        )}
         {req.note && (
           <p className="rounded-card border border-line-soft bg-card px-3 py-2 text-sm italic text-ink-soft">
             {"“"}
@@ -394,19 +445,26 @@ export function RequestDetailModal({
               </Button>
             </div>
           </div>
-        ) : (
+        ) : G && !X ? null : (
           <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-            <Button variant="outline" size="sm" onClick={V}>
-              <Vendor_CalendarSearch size={15} />
-              {" See in calendar"}
-            </Button>
+            {!G && (
+              <Button variant="outline" size="sm" onClick={V}>
+                <Vendor_CalendarSearch size={15} />
+                {" See in calendar"}
+              </Button>
+            )}
             {X && (
               <div className="ml-auto flex items-center gap-2">
                 <Button variant="danger" size="sm" onClick={() => j(!0)}>
                   <Vendor_X size={15} />
                   {" Deny"}
                 </Button>
-                <Button variant="success" size="sm" onClick={he}>
+                <Button
+                  variant="success"
+                  size="sm"
+                  onClick={he}
+                  disabled={!!holidayIssue}
+                >
                   <Vendor_Check size={15} />
                   {" Approve"}
                 </Button>

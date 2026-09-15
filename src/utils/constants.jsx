@@ -13,6 +13,8 @@ export const ROLE_META = {
   },
 };
 export const DEFAULT_NORMAL_DAYS_OFF = [0, 6];
+// Matches the database limit in submit_wellness_request.
+export const WELLNESS_MAX_DAYS = 10;
 export const firstName = (e = "") => e.split(" ")[0];
 export const initials = (e = "") =>
   e

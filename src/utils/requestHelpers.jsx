@@ -17,6 +17,16 @@ export function requestLines(e = {}) {
         ]
       : [];
 }
+// Wellness grant requests add days to a balance and have no dated lines.
+export const isWellnessGrant = (e) => (e == null ? void 0 : e.kind) === "wellness_grant";
+export function requestPrimaryTypeId(e) {
+  var t;
+  return isWellnessGrant(e)
+    ? e.grantTypeId
+    : (t = requestLines(e)[0]) == null
+      ? void 0
+      : t.type;
+}
 export function requestStart(e) {
   const t = requestLines(e)
     .map((n) => n.start)
@@ -37,13 +47,14 @@ export function requestOverlaps(e, t, n) {
 export function requestIncludesDay(e, t) {
   return requestOverlaps(e, t, t);
 }
-export function lineDays(e, t = DEFAULT_NORMAL_DAYS_OFF, n = []) {
-  return businessDays(e.start, e.end, t, n);
+export function lineDays(e, t = DEFAULT_NORMAL_DAYS_OFF) {
+  return businessDays(e.start, e.end, t);
 }
-export function requestDays(e, t = DEFAULT_NORMAL_DAYS_OFF, n = []) {
-  return requestLines(e).reduce((r, s) => r + lineDays(s, t, n), 0);
+export function requestDays(e, t = DEFAULT_NORMAL_DAYS_OFF) {
+  return requestLines(e).reduce((r, s) => r + lineDays(s, t), 0);
 }
 export function requestTypeIds(e) {
+  if (isWellnessGrant(e)) return e.grantTypeId ? [e.grantTypeId] : [];
   return Array.from(
     new Set(
       requestLines(e)
@@ -87,6 +98,8 @@ export function bookedDaysByDate(e = []) {
   );
 }
 export function requestRangeLabel(e) {
+  if (isWellnessGrant(e))
+    return `+${e.grantDays} day${e.grantDays === 1 ? "" : "s"} to balance`;
   const t = requestLines(e);
   return t.length === 0
     ? ""
@@ -96,11 +109,16 @@ export function requestRangeLabel(e) {
 }
 export function requestTypeLabel(e, t = []) {
   var r;
-  const n = requestTypeIds(e);
+  if (isWellnessGrant(e)) return "Wellness day request";
+  const n = requestTypeIds(e),
+    // A Holiday Day Off reads as the holiday it was booked for.
+    holidayName = requestLines(e).find((s) => s.holidayName)?.holidayName;
   return n.length === 0
     ? "PTO"
     : n.length === 1
-      ? ((r = t.find((s) => s.id === n[0])) == null ? void 0 : r.name) || "PTO"
+      ? holidayName ||
+        ((r = t.find((s) => s.id === n[0])) == null ? void 0 : r.name) ||
+        "PTO"
       : `${n.length} PTO types`;
 }
 export function canDecideRequest(e, t, n = []) {

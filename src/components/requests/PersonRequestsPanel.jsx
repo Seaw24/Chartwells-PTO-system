@@ -17,6 +17,8 @@ import { formatDateRange } from "../../utils/dateHelpers.jsx";
 import { EmptyState } from "../ui/EmptyState.jsx";
 import { CalendarX as Vendor_CalendarX } from "lucide-react";
 import { requestLines } from "../../utils/requestHelpers.jsx";
+import { requestPrimaryTypeId } from "../../utils/requestHelpers.jsx";
+import { isWellnessGrant } from "../../utils/requestHelpers.jsx";
 import { requestDays } from "../../utils/requestHelpers.jsx";
 import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
 import { StatusChip } from "./RequestDetailModal.jsx";
@@ -37,6 +39,7 @@ export function PersonRequestsPanel({
 }) {
   const {
       ptoTypes: ptoTypes,
+      balanceTypes: balanceTypes,
       ptoTypeById: ptoTypeById,
       userById: userById,
     } = useCatalog(),
@@ -54,7 +57,7 @@ export function PersonRequestsPanel({
         requestsForUser(userId),
         normalDaysOffFor(userId),
         Promise.all(
-          ptoTypes.map(async (type) => ({
+          balanceTypes.map(async (type) => ({
             type: type.id,
             balance: await balanceFor(userId, type.id),
             grant: await grantFor(userId, type.id),
@@ -150,7 +153,7 @@ export function PersonRequestsPanel({
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {ptoTypes.map((b) => {
+            {balanceTypes.map((b) => {
               const N = d.grantByType[b.id],
                 _ = d.balanceByType[b.id];
               return (
@@ -282,7 +285,7 @@ export function PersonRequestsPanel({
               {x.map((b) => {
                 var R, E, T;
                 const N = requestLines(b),
-                  _ = ptoTypeById((R = N[0]) == null ? void 0 : R.type),
+                  _ = ptoTypeById(requestPrimaryTypeId(b)),
                   j = (_ == null ? void 0 : _.color) || "var(--c-ink-mute)",
                   S = requestDays(b, d.normalDaysOff);
                 return (
@@ -319,10 +322,10 @@ export function PersonRequestsPanel({
                     </div>
                     <p className="text-[11px] text-ink-mute">
                       <span className="font-medium text-ink-soft tabular">
-                        {S}
+                        {isWellnessGrant(b) ? `+${b.grantDays}` : S}
                       </span>
-                      {" charged day"}
-                      {S === 1 ? "" : "s"}
+                      {isWellnessGrant(b) ? " wellness day" : " charged day"}
+                      {(isWellnessGrant(b) ? b.grantDays : S) === 1 ? "" : "s"}
                       {b.decidedBy &&
                         ` · by ${(T = (E = userById(b.decidedBy)) == null ? void 0 : E.name) == null ? void 0 : T.split(" ")[0]}`}
                     </p>

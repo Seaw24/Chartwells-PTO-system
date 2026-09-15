@@ -4,13 +4,13 @@ import { useDataSource } from "../../data/dataSource.jsx";
 import React from "react";
 import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
 export function BalanceCards({ userId: userId }) {
-  const { ptoTypes: ptoTypes } = useCatalog(),
+  const { balanceTypes: balanceTypes } = useCatalog(),
     { usedFor: usedFor, grantFor: grantFor } = useDataSource();
   const { data: s = null } = useResource(
-    ["balances", userId, ptoTypes.map((type) => type.id)],
+    ["balances", userId, balanceTypes.map((type) => type.id)],
     async () => {
       const values = await Promise.all(
-        ptoTypes.map(async (type) => ({
+        balanceTypes.map(async (type) => ({
           id: type.id,
           used: await usedFor(userId, type.id),
           grant: await grantFor(userId, type.id),
@@ -27,7 +27,7 @@ export function BalanceCards({ userId: userId }) {
   const { usedByType: usedByType, grantsByType: grantsByType } = s;
   return (
     <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0 lg:grid-cols-5">
-      {ptoTypes.map((l) => {
+      {balanceTypes.map((l) => {
         const u = grantsByType[l.id],
           h = usedByType[l.id],
           d = u - h,

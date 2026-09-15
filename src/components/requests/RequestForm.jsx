@@ -24,10 +24,15 @@ import { Users as Vendor_Users } from "lucide-react";
 import { Avatar } from "../ui/Avatar.jsx";
 import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
 import { Check as Vendor_Check } from "lucide-react";
+import { CalendarHeart as Vendor_CalendarHeart } from "lucide-react";
+import { holidaysCovering } from "../../utils/holidayDayOff.jsx";
+import { holidayDaysUsed } from "../../utils/holidayDayOff.jsx";
+import { holidayNote } from "../../utils/holidayDayOff.jsx";
 export const normalizeDraftLine = (e = {}) => ({
   type: e.type || "",
   start: e.start || "",
   end: e.end || e.start || "",
+  holidayId: e.holidayId || null,
 });
 export function RequestForm({
   prefill = {},
@@ -50,6 +55,8 @@ export function RequestForm({
       users: users,
       teams: teams,
       ptoTypes: ptoTypes,
+      balanceTypes: balanceTypes,
+      holidayDayOffType: holidayDayOffType,
       holidays: holidays,
       blackouts: blackouts,
       dateRules: dateRules,
@@ -59,6 +66,8 @@ export function RequestForm({
     [N, _] = React.useState(() => [normalizeDraftLine(prefill)]),
     [j, S] = React.useState(0),
     [R, E] = React.useState(""),
+    // The note a holiday card filled in, so leaving the card only clears text nobody edited.
+    autoNote = React.useRef(""),
     D = React.useMemo(() => {
       const Y = N.filter((ee) => ee.start && ee.end);
       return Y.length
@@ -76,7 +85,7 @@ export function RequestForm({
     !!D,
   );
   const { data: T = null } = useResource(
-    ["request-form", s, ptoTypes.map((type) => type.id)],
+    ["request-form", s, balanceTypes.map((type) => type.id)],
     async () => {
       const [requests, existingRequests, normalDaysOff, rows] =
         await Promise.all([
@@ -84,7 +93,7 @@ export function RequestForm({
           requestsForUser(s),
           normalDaysOffFor(s),
           Promise.all(
-            ptoTypes.map(async (type) => ({
+            balanceTypes.map(async (type) => ({
               type: type.id,
               balance: await balanceFor(s, type.id),
               grant: await grantFor(s, type.id),
@@ -134,16 +143,40 @@ export function RequestForm({
     A = V.days || 0;
   if (T === null) return null;
   const B = (Y, ee) => {
-      _((Pe) =>
-        Pe.map((ve, _e) =>
-          _e === Y
-            ? {
-                ...ve,
-                ...ee,
-              }
-            : ve,
-        ),
-      );
+      const prev = N[Y];
+      let next = {
+        ...prev,
+        ...ee,
+      };
+      "type" in ee &&
+        !ee.holidayId &&
+        (next = {
+          ...next,
+          holidayId: null,
+        });
+      const holiday = next.holidayId
+        ? holidays.find((ve) => ve.id === next.holidayId)
+        : null;
+      // A holiday card fits one working day inside its window; moving the dates off it drops the pick.
+      next.holidayId &&
+        !(
+          holiday &&
+          holidaysCovering([holiday], next.start, next.end).length &&
+          lineDays(next, U) === 1
+        ) &&
+        (next = {
+          ...next,
+          type: "",
+          holidayId: null,
+        });
+      // Picking a holiday card fills in the note; leaving it clears the note unless it was edited.
+      if (next.holidayId && next.holidayId !== prev.holidayId)
+        (!R.trim() || R === autoNote.current) &&
+          ((autoNote.current = holidayNote(holiday.name)),
+          E(autoNote.current));
+      else if (!next.holidayId && prev.holidayId && R === autoNote.current)
+        ((autoNote.current = ""), E(""));
+      _((Pe) => Pe.map((ve, _e) => (_e === Y ? next : ve)));
     },
     ae = (Y) => {
       _((ee) => {
@@ -184,6 +217,8 @@ export function RequestForm({
     teams: teams,
     coverageRows: H,
     ptoTypes: ptoTypes,
+    balanceTypes: balanceTypes,
+    holidayDayOffType: holidayDayOffType,
     dateRules: dateRules,
     blackouts: blackouts,
     holidays: holidays,
@@ -219,7 +254,7 @@ export function RequestForm({
             />
           );
         })}
-        {he && (
+        {he && !N.some((Y) => Y.holidayId) && (
           <button
             type="button"
             onClick={fe}
@@ -297,6 +332,8 @@ export function RequestLineEditor({
       teams: teams,
       coverageRows: coverageRows,
       ptoTypes: ptoTypes,
+      balanceTypes: balanceTypes,
+      holidayDayOffType: holidayDayOffType,
       dateRules: dateRules,
       blackouts: blackouts,
       holidays: holidays,
@@ -304,41 +341,59 @@ export function RequestLineEditor({
       teamId: teamId,
     } = ctx,
     j = !!(line.start && line.end),
-    S = j ? lineDays(line, normalDaysOff, holidays) : 0,
+    S = j ? lineDays(line, normalDaysOff) : 0,
+    // Holiday cards show for a single-line request of one working day inside a holiday's window.
+    holidayOptions = React.useMemo(
+      () =>
+        j && count === 1 && holidayDayOffType && S === 1
+          ? holidaysCovering(holidays, line.start, line.end)
+          : [],
+      [j, count, holidayDayOffType, S, holidays, line.start, line.end],
+    ),
     R = React.useMemo(() => {
       var $;
       if (!j) return {};
-      const P = {};
-      for (const U of ptoTypes) {
-        const X = lines.map((K, A) =>
-            A === index
-              ? {
-                  ...K,
-                  type: U.id,
-                }
-              : K,
-          ),
-          he =
-            (($ = validateDraft({
-              draft: {
-                lines: X,
-              },
-              todayIso: todayIso,
-              balances: balances,
-              normalDaysOff: normalDaysOff,
-              existingRequests: existingRequests,
-              ptoTypes: ptoTypes,
-              dateRules: dateRules,
-              blackouts: blackouts,
-              holidays: holidays,
-            }).lineResults.find((K) => K.index === index)) == null
-              ? void 0
-              : $.errors) ?? [];
-        P[U.id] = {
-          ok: he.length === 0,
-          reason: he[0] || "",
+      const P = {},
+        check = (key, patch) => {
+          const X = lines.map((K, A) =>
+              A === index
+                ? {
+                    ...K,
+                    ...patch,
+                  }
+                : K,
+            ),
+            he =
+              (($ = validateDraft({
+                draft: {
+                  lines: X,
+                },
+                todayIso: todayIso,
+                balances: balances,
+                normalDaysOff: normalDaysOff,
+                existingRequests: existingRequests,
+                ptoTypes: ptoTypes,
+                dateRules: dateRules,
+                blackouts: blackouts,
+                holidays: holidays,
+              }).lineResults.find((K) => K.index === index)) == null
+                ? void 0
+                : $.errors) ?? [];
+          P[key] = {
+            ok: he.length === 0,
+            reason: he[0] || "",
+          };
         };
-      }
+      for (const U of balanceTypes)
+        check(U.id, {
+          type: U.id,
+          holidayId: null,
+        });
+      for (const h of holidayOptions)
+        check(`holiday:${h.id}`, {
+          type: holidayDayOffType.id,
+          holidayId: h.id,
+        });
       return P;
     }, [
       lines,
@@ -349,6 +404,9 @@ export function RequestLineEditor({
       normalDaysOff,
       existingRequests,
       ptoTypes,
+      balanceTypes,
+      holidayOptions,
+      holidayDayOffType,
       dateRules,
       blackouts,
       holidays,
@@ -391,18 +449,25 @@ export function RequestLineEditor({
           : null,
       [coverageRows, j, line.start, line.end, teamId],
     ),
-    I = line.type ? R[line.type] : null,
+    I = line.holidayId
+      ? R[`holiday:${line.holidayId}`]
+      : line.type
+        ? R[line.type]
+        : null,
     D = !!(line.type && I && !I.ok),
     q =
       j &&
-      ptoTypes.find(
+      balanceTypes.find(
         (P) =>
           P.restrictedDates &&
           R[P.id] &&
           !R[P.id].ok &&
           /only available during/i.test(R[P.id].reason),
       ),
-    Z = j && ptoTypes.every((P) => R[P.id] && !R[P.id].ok);
+    Z =
+      j &&
+      balanceTypes.every((P) => R[P.id] && !R[P.id].ok) &&
+      holidayOptions.every((h) => !R[`holiday:${h.id}`]?.ok);
   return (
     <div
       className="rounded-card border border-line bg-card p-3 shadow-card sm:p-4"
@@ -468,14 +533,37 @@ export function RequestLineEditor({
           <section>
             <h3 className="eyebrow mb-2.5">{"What type of time off?"}</h3>
             <div className="space-y-2">
-              {ptoTypes.map((P) => (
+              {holidayOptions.map((h) => (
+                <TypeOption
+                  type={holidayDayOffType}
+                  label={h.name}
+                  caption={holidayDayOffType.name}
+                  icon={Vendor_CalendarHeart}
+                  remaining={Math.max(
+                    0,
+                    1 - holidayDaysUsed(h.id, existingRequests),
+                  )}
+                  total={1}
+                  charged={S}
+                  info={R[`holiday:${h.id}`]}
+                  selected={line.holidayId === h.id}
+                  onSelect={() =>
+                    onChange({
+                      type: holidayDayOffType.id,
+                      holidayId: h.id,
+                    })
+                  }
+                  key={`holiday:${h.id}`}
+                />
+              ))}
+              {balanceTypes.map((P) => (
                 <TypeOption
                   type={P}
                   remaining={balances[P.id] ?? 0}
                   total={grants[P.id] ?? P.defaultDays}
                   charged={S}
                   info={R[P.id]}
-                  selected={line.type === P.id}
+                  selected={line.type === P.id && !line.holidayId}
                   onSelect={() =>
                     onChange({
                       type: P.id,
@@ -562,6 +650,9 @@ export function ConflictWarning({ conflicts: conflicts }) {
 }
 export function TypeOption({
   type: type,
+  label: label,
+  caption: caption,
+  icon: LocalComponent_Icon,
   remaining: remaining,
   total: total,
   charged: charged,
@@ -611,25 +702,38 @@ export function TypeOption({
           background: `color-mix(in oklch, ${type.color} ${h ? 8 : 14}%, var(--c-card))`,
         }}
       >
-        <PtoTypeIcon
-          typeId={type.id}
-          size={12}
-          className={h ? "saturate-[0.4]" : ""}
-        />
+        {LocalComponent_Icon ? (
+          <LocalComponent_Icon
+            size={16}
+            strokeWidth={2.25}
+            aria-hidden="true"
+            className={h ? "saturate-[0.4]" : ""}
+            style={{
+              color: type.color,
+            }}
+          />
+        ) : (
+          <PtoTypeIcon
+            typeId={type.id}
+            size={12}
+            className={h ? "saturate-[0.4]" : ""}
+          />
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-ink">
-          {type.name}
+          {label || type.name}
         </span>
         {c ? (
           <span
-            className="block text-[11px] font-medium tabular"
+            className="block truncate text-[11px] font-medium tabular"
             style={{
               color: selected
                 ? `color-mix(in oklch, ${type.color} 70%, var(--c-ink))`
                 : "var(--c-ink-mute)",
             }}
           >
+            {caption && `${caption} · `}
             {l}
             {" left after "}
             {charged}
@@ -638,8 +742,9 @@ export function TypeOption({
           </span>
         ) : (
           <span
-            className={`block text-[11px] font-medium tabular ${d ? "text-danger-ink" : "text-ink-mute"}`}
+            className={`block truncate text-[11px] font-medium tabular ${d ? "text-danger-ink" : "text-ink-mute"}`}
           >
+            {caption && `${caption} · `}
             {u}
           </span>
         )}
@@ -673,7 +778,7 @@ export function TypeOption({
 export function shortValidationMessage(e = "", t = 0) {
   return /balance is short/i.test(e)
     ? `Not enough for ${t} day${t === 1 ? "" : "s"}`
-    : /only available during/i.test(e)
+    : /only available during|must fall within/i.test(e)
       ? "Not on these dates"
       : /past/i.test(e)
         ? "Can't be backdated"
@@ -693,9 +798,9 @@ export function RequestLineSummary({
   onRemove: onRemove,
   canRemove: canRemove,
 }) {
-  const { ptoTypeById: ptoTypeById, holidays: holidays } = useCatalog(),
+  const { ptoTypeById: ptoTypeById } = useCatalog(),
     l = ptoTypeById(line.type),
-    u = lineDays(line, normalDaysOff, holidays);
+    u = lineDays(line, normalDaysOff);
   return (
     <div className="lift flex items-center gap-2.5 rounded-card border border-line bg-card px-3 py-2.5 shadow-card">
       <button

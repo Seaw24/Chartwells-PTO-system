@@ -57,6 +57,9 @@ export function CatalogProvider({ children }) {
       userById: (id) => data.users.find((u) => u.id === id),
       teamById: (id) => data.teams.find((t) => t.id === id),
       ptoTypeById: (id) => data.ptoTypes.find((t) => t.id === id),
+      // Holiday Day Off is one day per holiday, not a yearly balance, so balance views skip it.
+      balanceTypes: data.ptoTypes.filter((t) => !t.isHolidayDayOff),
+      holidayDayOffType: data.ptoTypes.find((t) => t.isHolidayDayOff) ?? null,
       reload: () => {},
     };
   }, [query.data, query.isPending, query.error, query.dataUpdatedAt]);

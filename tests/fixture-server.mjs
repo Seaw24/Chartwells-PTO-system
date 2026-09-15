@@ -7,20 +7,25 @@ const date = new Date(),
   year = date.getFullYear(),
   iso = (d) => d.toISOString().slice(0, 10);
 const future = iso(new Date(date.getTime() + 7 * 864e5));
+const dayOffset = (n, from = date) =>
+  iso(new Date(new Date(from).getTime() + n * 864e5));
 const types = [
   "Vacation",
   "Sick",
   "Wellness Day",
   "Floating Holiday",
   "Labor Day",
+  "Holiday Day Off",
 ].map((name, i) => ({
   id: `00000000-0000-0000-0000-${String(10 + i).padStart(12, "0")}`,
   name,
-  color: ["#4071B6", "#C46A2B", "#2E8B73", "#8A5DB5", "#697386"][i],
-  default_days: [10, 5, 2, 1, 1][i],
+  color: ["#4071B6", "#C46A2B", "#2E8B73", "#8A5DB5", "#697386", "#2A8FA8"][i],
+  default_days: [10, 5, 2, 1, 1, 0][i],
   requires_window: false,
   allow_backdate: i === 1,
   is_active: true,
+  is_wellness: i === 2,
+  is_holiday_day_off: i === 5,
 }));
 const users = [
   {
@@ -74,7 +79,7 @@ const tables = {
   ],
   pto_types: types,
   pto_grants: users.flatMap((user) =>
-    types.map((type) => ({
+    types.filter((type) => !type.is_holiday_day_off).map((type) => ({
       user_id: user.id,
       pto_type_id: type.id,
       leave_year: year,
@@ -94,8 +99,69 @@ const tables = {
         { pto_type_id: types[0].id, start_date: future, end_date: future },
       ],
     },
+    {
+      id: "00000000-0000-0000-0000-000000000101",
+      requester_id: other,
+      status: "pending",
+      kind: "wellness_grant",
+      grant_type_id: types[2].id,
+      grant_days: 2,
+      grant_year: year,
+      note: "Recharging after the conference week",
+      submitted_at: new Date(date.getTime() - 3 * 864e5).toISOString(),
+      decided_at: null,
+      decided_by: null,
+      request_lines: [],
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000102",
+      requester_id: other,
+      status: "pending",
+      note: "Request time off for Spring Heritage Day",
+      submitted_at: new Date(date.getTime() - 864e5).toISOString(),
+      decided_at: null,
+      decided_by: null,
+      request_lines: [
+        {
+          pto_type_id: types[5].id,
+          start_date: dayOffset(12),
+          end_date: dayOffset(12),
+          holiday_id: null,
+          holiday_name: "Spring Heritage Day",
+        },
+      ],
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000103",
+      requester_id: other,
+      status: "pending",
+      note: "Request time off for Harvest Festival",
+      submitted_at: new Date(date.getTime() - 2 * 864e5).toISOString(),
+      decided_at: null,
+      decided_by: null,
+      request_lines: [
+        {
+          pto_type_id: types[5].id,
+          start_date: dayOffset(25),
+          end_date: dayOffset(25),
+          holiday_id: "00000000-0000-0000-0000-000000000301",
+          holiday_name: "Harvest Festival",
+        },
+      ],
+    },
   ],
-  holidays: [],
+  holidays: [
+    {
+      id: "00000000-0000-0000-0000-000000000300",
+      date: dayOffset(-3),
+      name: "Founders Day",
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000301",
+      date: dayOffset(-12),
+      name: "Harvest Festival",
+    },
+  ],
   blackout_dates: [],
   date_rules: [],
   team_memberships: users.flatMap((u) => u.team_memberships),
@@ -112,6 +178,13 @@ const authUser = {
   created_at: date.toISOString(),
 };
 let count = 200;
+// Mirrors the database trigger: wellness grant approvals move the wellness balance.
+const adjustWellnessGrant = (r, sign) => {
+  if (r?.kind !== "wellness_grant") return;
+  tables.pto_grants.find(
+    (g) => g.user_id === r.requester_id && g.pto_type_id === r.grant_type_id,
+  ).amount += sign * r.grant_days;
+};
 http
   .createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -197,13 +270,75 @@ http
         });
         return send(id);
       }
-      if (method === "decide_request") {
+      if (method === "submit_wellness_request") {
+        const id = `00000000-0000-0000-0000-${String(count++).padStart(12, "0")}`;
+        tables.requests.unshift({
+          id,
+          requester_id: uid,
+          status: "pending",
+          kind: "wellness_grant",
+          grant_type_id: types[2].id,
+          grant_days: body.p_days,
+          grant_year: year,
+          note: body.p_note,
+          submitted_at: new Date().toISOString(),
+          decided_at: null,
+          decided_by: null,
+          request_lines: [],
+        });
+        return send(id);
+      }
+      if (method === "submit_holiday_day_off") {
+        const holiday = tables.holidays.find((h) => h.id === body.p_holiday_id);
+        const id = `00000000-0000-0000-0000-${String(count++).padStart(12, "0")}`;
+        tables.requests.unshift({
+          id,
+          requester_id: uid,
+          status: "pending",
+          note: body.p_note,
+          submitted_at: new Date().toISOString(),
+          decided_at: null,
+          decided_by: null,
+          request_lines: [
+            {
+              pto_type_id: types[5].id,
+              start_date: body.p_start,
+              end_date: body.p_end,
+              holiday_id: holiday.id,
+              holiday_name: holiday.name,
+            },
+          ],
+        });
+        return send(id);
+      }
+      if (method === "decide_request" || method === "decide_wellness_request") {
         if (!r || r.status !== "pending")
           return send({ message: "This request has already changed." }, 400);
+        // Mirrors the database trigger: a stale Holiday Day Off cannot be approved.
+        const stale =
+          body.p_approve &&
+          r.request_lines.find(
+            (l) =>
+              l.holiday_name &&
+              !tables.holidays.some(
+                (h) =>
+                  h.id === l.holiday_id &&
+                  h.date <= l.start_date &&
+                  l.end_date <= dayOffset(30, `${h.date}T12:00:00`),
+              ),
+          );
+        if (stale)
+          return send(
+            {
+              message: `${stale.holiday_name} no longer matches this day, so it cannot be approved. Deny it instead.`,
+            },
+            400,
+          );
         r.status = body.p_approve ? "approved" : "denied";
         r.decided_at = new Date().toISOString();
         r.decided_by = uid;
         r.denial_reason = body.p_reason;
+        if (body.p_approve) adjustWellnessGrant(r, 1);
         return send(null);
       }
       if (method === "cancel_request") {
@@ -216,6 +351,7 @@ http
         return send(null);
       }
       if (method === "undo_decision") {
+        if (r.status === "approved") adjustWellnessGrant(r, -1);
         r.status = "pending";
         r.decided_at = null;
         return send(null);
@@ -257,6 +393,16 @@ http
       rows.forEach((row) => Object.assign(row, body));
     else if (req.method === "DELETE")
       tables[table] = tables[table].filter((row) => !rows.includes(row));
+    // Mirrors the database: holiday renames flow to bookings, deletes unlink them.
+    if (table === "holidays" && req.method !== "POST")
+      tables.requests
+        .flatMap((r) => r.request_lines)
+        .forEach((l) => {
+          const h = rows.find((row) => row.id === l.holiday_id);
+          if (!h) return;
+          if (req.method === "DELETE") l.holiday_id = null;
+          else l.holiday_name = h.name;
+        });
     return send(
       req.headers.accept?.includes("vnd.pgrst.object")
         ? (rows[0] ?? null)

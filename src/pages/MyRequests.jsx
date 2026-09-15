@@ -1,5 +1,6 @@
 import { useResource } from "../hooks/useResource.jsx";
 import { requestEnd } from "../utils/requestHelpers.jsx";
+import { isWellnessGrant } from "../utils/requestHelpers.jsx";
 import { Modal } from "../components/ui/Modal.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { useCurrentUser } from "../context/AuthContext.jsx";
@@ -45,10 +46,13 @@ export function requestBucket(e, t) {
     ? "pending"
     : e.status === "denied"
       ? "denied"
-      : e.status === "approved" && requestEnd(e) >= t
+      : e.status === "approved" && (isWellnessGrant(e) || requestEnd(e) >= t)
         ? "approved"
         : "past";
 }
+// Wellness grants have no dates, so they sort by when they were submitted.
+const requestSortDate = (e) =>
+  toDateLocal(isWellnessGrant(e) ? e.submittedAt : requestStart(e));
 export function matchesRequestTab(e, t, n) {
   return t === "all" || requestBucket(e, n) === t;
 }
@@ -139,7 +143,7 @@ export function MyRequests() {
             ? j.submittedAt < S.submittedAt
               ? 1
               : -1
-            : toDateLocal(requestStart(j)) - toDateLocal(requestStart(S)),
+            : requestSortDate(j) - requestSortDate(S),
         ),
       [y, o, h, t],
     ),

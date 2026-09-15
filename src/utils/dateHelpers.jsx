@@ -27,17 +27,17 @@ export function formatDateRange(e, t) {
     o = Vendor_format(r, "EEE, MMM d, yyyy");
   return `${i} – ${o}`;
 }
-export function businessDays(e, t, n = [0, 6], r = []) {
+// Company holidays are charged like any other day; only regular days off are skipped.
+export function businessDays(e, t, n = [0, 6]) {
   if (!e || !t) return 0;
   const s = toDateLocal(e),
     i = toDateLocal(t);
   if (i < s) return 0;
-  const o = new Set(n),
-    c = new Set(r.map((l) => (typeof l == "string" ? l : l.date)));
+  const o = new Set(n);
   return Vendor_eachDayOfInterval({
     start: s,
     end: i,
-  }).filter((l) => !o.has(l.getDay()) && !c.has(toISO(l))).length;
+  }).filter((l) => !o.has(l.getDay())).length;
 }
 export function timeAgo(e, t = new Date()) {
   return `${Vendor_formatDistance(toDateLocal(e), toDateLocal(t))} ago`;

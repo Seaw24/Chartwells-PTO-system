@@ -13,7 +13,7 @@ import { addDays as Vendor_addDays } from "date-fns";
 import { toISO } from "../utils/dateHelpers.jsx";
 import { DashboardView } from "../components/dashboard/DashboardView.jsx";
 import { buildCoverageWeek } from "../components/dashboard/Coverage.jsx";
-import { requestLines } from "../utils/requestHelpers.jsx";
+import { requestPrimaryTypeId } from "../utils/requestHelpers.jsx";
 import { requestTypeLabel } from "../utils/requestHelpers.jsx";
 import { requestRangeLabel } from "../utils/requestHelpers.jsx";
 import { requestEnd } from "../utils/requestHelpers.jsx";
@@ -34,6 +34,7 @@ export function Dashboard() {
       users: users,
       teams: teams,
       ptoTypes: ptoTypes,
+      balanceTypes: balanceTypes,
       holidays: holidays,
     } = useCatalog(),
     { openRequest: openRequest } = useRequestModal(),
@@ -51,7 +52,7 @@ export function Dashboard() {
         requestsForUser(e.id),
         coverageForRange(toISO(start), toISO(Vendor_addDays(start, 6))),
         Promise.all(
-          ptoTypes.map(async (type) => {
+          balanceTypes.map(async (type) => {
             const [remaining, grant, used] = await Promise.all([
               balanceFor(e.id, type.id),
               grantFor(e.id, type.id),
@@ -89,7 +90,7 @@ export function Dashboard() {
       var S;
       return {
         id: j.id,
-        typeId: (S = requestLines(j)[0]) == null ? void 0 : S.type,
+        typeId: requestPrimaryTypeId(j),
         label: requestTypeLabel(j, ptoTypes),
         rangeLabel: requestRangeLabel(j),
         status: j.status,

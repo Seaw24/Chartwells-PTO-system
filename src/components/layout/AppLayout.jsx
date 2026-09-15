@@ -14,6 +14,8 @@ import { RolePill } from "../ui/RolePill.jsx";
 import { useRequestModal } from "../requests/RequestModalProvider.jsx";
 import { Button } from "../ui/Button.jsx";
 import { Plus as Vendor_Plus } from "lucide-react";
+import { Leaf as Vendor_Leaf } from "lucide-react";
+import { useWellnessType } from "../requests/Wellness.jsx";
 import { useLocation as Vendor_useLocation } from "react-router-dom";
 import { useDataSource } from "../../data/dataSource.jsx";
 import { useResource } from "../../hooks/useResource.jsx";
@@ -183,7 +185,11 @@ export function AccountMenu() {
   );
 }
 export function TopBar({ title: title, subtitle: subtitle }) {
-  const { openRequest: openRequest } = useRequestModal();
+  const {
+      openRequest: openRequest,
+      openWellnessRequest: openWellnessRequest,
+    } = useRequestModal(),
+    wellnessType = useWellnessType();
   return (
     <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2.5 border-b border-line bg-card px-4 sm:gap-3 sm:px-6">
       <div className="min-w-0 flex-1">
@@ -194,6 +200,28 @@ export function TopBar({ title: title, subtitle: subtitle }) {
           <p className="truncate text-[13px] text-ink-mute">{subtitle}</p>
         )}
       </div>
+      {wellnessType && (
+        <>
+          <Button
+            variant="success"
+            size="sm"
+            onClick={openWellnessRequest}
+            className="hidden sm:inline-flex"
+          >
+            <Vendor_Leaf size={16} />
+            {" Wellness Day"}
+          </Button>
+          <Button
+            variant="success"
+            size="icon"
+            onClick={openWellnessRequest}
+            className="sm:hidden"
+            aria-label="Request wellness day off"
+          >
+            <Vendor_Leaf size={18} />
+          </Button>
+        </>
+      )}
       <Button
         variant="primary"
         size="sm"

@@ -34,7 +34,9 @@ export function CalendarChip({
   const { ptoTypeById: ptoTypeById, userById: userById } = useCatalog(),
     o = ptoTypeById(request.type),
     c = userById(request.userId),
-    l = request.status === "pending";
+    l = request.status === "pending",
+    // A Holiday Day Off reads as its holiday.
+    typeName = request.line?.holidayName || o.name;
   return (
     <button
       onClick={(u) => {
@@ -47,8 +49,8 @@ export function CalendarChip({
           ? `1px dashed color-mix(in oklch, ${o.color} 55%, transparent)`
           : `1px solid color-mix(in oklch, ${o.color} 30%, transparent)`,
       }}
-      title={`${c == null ? void 0 : c.name} · ${o.name} · ${request.status}`}
-      aria-label={`${c == null ? void 0 : c.name}, ${o.name}, ${request.status}`}
+      title={`${c == null ? void 0 : c.name} · ${typeName} · ${request.status}`}
+      aria-label={`${c == null ? void 0 : c.name}, ${typeName}, ${request.status}`}
     >
       <span
         className="h-1.5 w-1.5 shrink-0 rounded-full"
@@ -470,7 +472,7 @@ export function WeekView({
                           ? `1px dashed color-mix(in oklch, ${C.color} 55%, transparent)`
                           : `1px solid color-mix(in oklch, ${C.color} 30%, transparent)`,
                       }}
-                      aria-label={`${(I = userById(T.userId)) == null ? void 0 : I.name}, ${C.name}, ${T.status}`}
+                      aria-label={`${(I = userById(T.userId)) == null ? void 0 : I.name}, ${T.line?.holidayName || C.name}, ${T.status}`}
                       key={T.lineKey || T.id}
                     >
                       <span className="flex items-center gap-1.5">
@@ -487,7 +489,7 @@ export function WeekView({
                         </span>
                       </span>
                       <span className="mt-0.5 block text-[10px] text-ink-mute">
-                        {C.name}
+                        {T.line?.holidayName || C.name}
                       </span>
                     </button>
                   );
@@ -769,11 +771,13 @@ export function TeamTimeline({
                               ? `1px dashed color-mix(in oklch, ${E.color} 55%, transparent)`
                               : `1px solid color-mix(in oklch, ${E.color} 32%, transparent)`,
                           }}
-                          title={`${_.name} · ${E.name} · ${S.status}`}
+                          title={`${_.name} · ${S.line?.holidayName || E.name} · ${S.status}`}
                           key={S.lineKey || S.id}
                         >
                           <PtoTypeIcon typeId={E.id} size={6} />
-                          <span className="truncate">{E.name}</span>
+                          <span className="truncate">
+                            {S.line?.holidayName || E.name}
+                          </span>
                         </button>
                       );
                     })}
