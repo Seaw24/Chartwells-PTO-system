@@ -18,6 +18,7 @@ import { findTeamConflicts } from "../../utils/policyEngine.jsx";
 import { canDecideRequest } from "../../utils/requestHelpers.jsx";
 import { firstName } from "../../utils/constants.jsx";
 import { Modal } from "../ui/Modal.jsx";
+import { StampSlots } from "./StampSlots.jsx";
 import { Avatar } from "../ui/Avatar.jsx";
 import { History as Vendor_History } from "lucide-react";
 import { UserTeams } from "../../utils/organization.jsx";
@@ -148,7 +149,6 @@ export function RequestDetailModal({
       balanceFor: balanceFor,
       grantFor: grantFor,
       normalDaysOffFor: normalDaysOffFor,
-      approveRequest: approveRequest,
       denyRequest: denyRequest,
     } = useDataSource(),
     v = useToast(),
@@ -211,7 +211,7 @@ export function RequestDetailModal({
     q = requestLines(req),
     Z = requestTypeIds(req),
     P = requestDays(req, normalDaysOff),
-    $ = userById(req.decidedBy),
+    $ = req.decidedByName ?? userById(req.decidedBy)?.name ?? null,
     U = findTeamConflicts({
       draft: req,
       requests: requests,
@@ -223,16 +223,6 @@ export function RequestDetailModal({
     G = isWellnessGrant(req),
     V = () => {
       (onClose == null || onClose(), x(`/calendar?req=${req.id}`));
-    },
-    he = () => {
-      approveRequest(req.id).then(() => {
-        (m(),
-          v(`Approved ${firstName(D == null ? void 0 : D.name)}'s request.`, {
-            kind: "success",
-          }),
-          onChanged == null || onChanged(),
-          onClose == null || onClose());
-      });
     },
     K = () => {
       S.trim() &&
@@ -358,7 +348,7 @@ export function RequestDetailModal({
               label={req.status === "approved" ? "Approved by" : "Decided by"}
             >
               <span className="text-ink-soft">
-                {$.name}
+                {$}
                 {" · "}
                 {fmtDateTime(req.decidedAt)}
               </span>
@@ -445,7 +435,7 @@ export function RequestDetailModal({
               </Button>
             </div>
           </div>
-        ) : G && !X ? null : (
+        ) : (
           <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
             {!G && (
               <Button variant="outline" size="sm" onClick={V}>
@@ -453,23 +443,16 @@ export function RequestDetailModal({
                 {" See in calendar"}
               </Button>
             )}
-            {X && (
-              <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-3">
+              {X && (
                 <Button variant="danger" size="sm" onClick={() => j(!0)}>
                   <Vendor_X size={15} />
                   {" Deny"}
                 </Button>
-                <Button
-                  variant="success"
-                  size="sm"
-                  onClick={he}
-                  disabled={!!holidayIssue}
-                >
-                  <Vendor_Check size={15} />
-                  {" Approve"}
-                </Button>
-              </div>
-            )}
+              )}
+              {/* Both slots show here, whoever is looking: the requester sees who they wait on. */}
+              <StampSlots request={req} size="sm" />
+            </div>
           </div>
         )}
       </div>

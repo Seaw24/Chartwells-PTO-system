@@ -18,11 +18,58 @@ export const mapRequest = (e) => ({
   decidedAt: e.decided_at,
   denialReason: e.denial_reason,
   submittedAt: e.submitted_at,
+  // Two-stamp approval: a team slot and a god slot, each stamped, waiting, or an X (na).
+  stamps: {
+    team: {
+      by: e.team_stamp_by ?? null,
+      at: e.team_stamp_at ?? null,
+      override: !!e.team_stamp_override,
+      overrideOf: e.team_stamp_override_of ?? null,
+      na: !!e.team_stamp_na,
+    },
+    god: {
+      by: e.god_stamp_by ?? null,
+      at: e.god_stamp_at ?? null,
+      na: !!e.god_stamp_na,
+    },
+  },
+  deniedSlot: e.denied_slot ?? null,
   kind: e.kind ?? "time_off",
   grantTypeId: e.grant_type_id ?? null,
   grantDays: e.grant_days ?? null,
   grantYear: e.grant_year ?? null,
 });
+// request_stamp_facts() answers the two questions a viewer's own roster cannot: whether anybody
+// can fill each slot, and the names behind the stamps. It is merged in rather than passed to
+// mapRequest, because most reads call that through .map() where a second argument is the index.
+export const applyStampFacts = (requests, factRows) => {
+  if (!(factRows != null && factRows.length)) return requests;
+  const byId = new Map(factRows.map((f) => [f.request_id, f]));
+  return requests.map((r) => {
+    const f = byId.get(r.id);
+    return f
+      ? {
+          ...r,
+          decidedByName: f.decided_by_name ?? null,
+          stamps: {
+            team: {
+              ...r.stamps.team,
+              naNow: !!f.team_na_now,
+              byName: f.team_stamp_by_name ?? null,
+              byRole: f.team_stamp_by_role ?? null,
+              overrideOfName: f.team_stamp_override_of_name ?? null,
+            },
+            god: {
+              ...r.stamps.god,
+              naNow: !!f.god_na_now,
+              byName: f.god_stamp_by_name ?? null,
+              byRole: f.god_stamp_by_role ?? null,
+            },
+          },
+        }
+      : r;
+  });
+};
 export const mapProfile = (e) => {
   var r;
   const t = e.team_memberships ?? [],

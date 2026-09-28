@@ -1,4 +1,6 @@
 import { QueryBoundary } from "../ui/QueryBoundary.jsx";
+import { canStampSlot } from "../../utils/requestHelpers.jsx";
+import { useCatalog } from "../../context/CatalogContext.jsx";
 import { useCurrentUser } from "../../context/AuthContext.jsx";
 import { useNavigate as Vendor_useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -299,12 +301,18 @@ export function AppLayout() {
       }),
     s = useCurrentUser(),
     { pendingForApprover: pendingForApprover } = useDataSource(),
+    { users: catalogUsers } = useCatalog(),
     { data: pending = [] } = useResource(
       ["pending-approvals"],
       () => pendingForApprover(),
       canApprove(s?.role),
     ),
-    c = pending.length;
+    // Same rule as the sidebar: only cards still waiting on my own stamp.
+    c = pending.filter(
+      (p) =>
+        canStampSlot(s, p, "god", catalogUsers) ||
+        canStampSlot(s, p, "team", catalogUsers),
+    ).length;
   const u = TS[pathname] || {
       title: "Chartwells PTO",
     },

@@ -562,6 +562,11 @@ export function ReportsPage() {
         "Business Days",
         "Status",
         "Decided By",
+        "Team Stamp",
+        "Team Stamped At",
+        "Override",
+        "God Stamp",
+        "God Stamped At",
       ],
       T = O.map((D) => {
         var R, z, U, q, F;
@@ -581,6 +586,13 @@ export function ReportsPage() {
           lineDays(D, p.normalDaysOffByUser[D.userId]),
           D.status,
           ((F = userById(D.decidedBy)) == null ? void 0 : F.name) || "",
+          D.stamps?.team?.na
+            ? "n/a"
+            : (userById(D.stamps?.team?.by)?.name ?? ""),
+          D.stamps?.team?.at ?? "",
+          D.stamps?.team?.override ? "yes" : "",
+          D.stamps?.god?.na ? "n/a" : (userById(D.stamps?.god?.by)?.name ?? ""),
+          D.stamps?.god?.at ?? "",
         ];
       }),
       j = toCsv([_, ...T]),

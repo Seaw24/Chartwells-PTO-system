@@ -1,6 +1,7 @@
 import { queryClient } from "../lib/queryClient.js";
 import { getSupabaseClient } from "./supabaseClient.jsx";
 import { mapRequest } from "./mappers.jsx";
+import { applyStampFacts } from "./mappers.jsx";
 import { unwrap } from "./mappers.jsx";
 import { REQUEST_SELECT } from "./mappers.jsx";
 import { PROFILE_SELECT } from "./mappers.jsx";
@@ -24,49 +25,61 @@ export function createSupabaseDataSource(clientOverride = null) {
         null
       );
     },
-    requestById = async (l) =>
-      mapRequest(
-        unwrap(
-          await client
-            .from("requests")
-            .select(REQUEST_SELECT)
-            .eq("id", l)
-            .single(),
-        ),
-      ),
-    decide = async (requestId, approve, reason) => {
-      // Wellness grants have no dated lines, so they use their own decision procedure.
-      const row = unwrap(
-        await client
-          .from("requests")
-          .select("*")
-          .eq("id", requestId)
-          .maybeSingle(),
-      );
+    // The seals need facts the caller's own view of profiles cannot supply; see request_stamp_facts.
+    // The call is tolerant of the function being absent, so the app runs before the migration lands.
+    stampFacts = async (requestId = null) => {
+      // These facts only make the seals more exact; a request list is still worth showing without
+      // them. A missing function comes back as an error, a dropped connection throws, and neither
+      // should cost the caller their requests.
+      try {
+        const { data: data, error: error } = await client.rpc(
+          "request_stamp_facts",
+          { p_request_id: requestId },
+        );
+        return error ? [] : (data ?? []);
+      } catch {
+        return [];
+      }
+    },
+    withStampFacts = async (requests) =>
+      applyStampFacts(requests, await stampFacts()),
+    requestById = async (l) => {
+      const [res, facts] = await Promise.all([
+        client.from("requests").select(REQUEST_SELECT).eq("id", l).single(),
+        stampFacts(l),
+      ]);
+      return applyStampFacts([mapRequest(unwrap(res))], facts)[0];
+    },
+    stamp = async (requestId, slot, override = !1) => {
       unwrap(
-        await client.rpc(
-          (row == null ? void 0 : row.kind) === "wellness_grant"
-            ? "decide_wellness_request"
-            : "decide_request",
-          {
-            p_request_id: requestId,
-            p_approve: approve,
-            p_reason: reason,
-          },
-        ),
+        await client.rpc("stamp_request", {
+          p_request_id: requestId,
+          p_slot: slot,
+          p_override: override,
+        }),
+      );
+    },
+    unstamp = async (requestId, slot) => {
+      unwrap(
+        await client.rpc("unstamp_request", {
+          p_request_id: requestId,
+          p_slot: slot,
+        }),
       );
     },
     getRequests = async () =>
-      (
-        unwrap(
-          await client
-            .from("requests")
-            .select(REQUEST_SELECT)
-            .order("submitted_at", {
-              ascending: !1,
-            }),
-        ) ?? []
-      ).map(mapRequest),
+      withStampFacts(
+        (
+          unwrap(
+            await client
+              .from("requests")
+              .select(REQUEST_SELECT)
+              .order("submitted_at", {
+                ascending: !1,
+              }),
+          ) ?? []
+        ).map(mapRequest),
+      ),
     profilesById = async () => {
       const l =
         unwrap(await client.from("profiles").select(PROFILE_SELECT)) ?? [];
@@ -147,17 +160,19 @@ export function createSupabaseDataSource(clientOverride = null) {
   return {
     getRequests: getRequests,
     requestsForUser: async (l) =>
-      (
-        unwrap(
-          await client
-            .from("requests")
-            .select(REQUEST_SELECT)
-            .eq("requester_id", l)
-            .order("submitted_at", {
-              ascending: !1,
-            }),
-        ) ?? []
-      ).map(mapRequest),
+      withStampFacts(
+        (
+          unwrap(
+            await client
+              .from("requests")
+              .select(REQUEST_SELECT)
+              .eq("requester_id", l)
+              .order("submitted_at", {
+                ascending: !1,
+              }),
+          ) ?? []
+        ).map(mapRequest),
+      ),
     pendingForApprover: async (l = null) => {
       const u = await currentUserId(),
         h = (
@@ -173,14 +188,14 @@ export function createSupabaseDataSource(clientOverride = null) {
         )
           .map(mapRequest)
           .filter((f) => f.userId !== u);
-      if (!l) return h;
+      if (!l) return withStampFacts(h);
       const d = await profilesById();
-      return h.filter((f) => belongsToTeam(d.get(f.userId), l));
+      return withStampFacts(h.filter((f) => belongsToTeam(d.get(f.userId), l)));
     },
     recentDecisionsBy: async (l = 30) => {
       const u = await currentUserId(),
         h = new Date(Date.now() - l * 864e5).toISOString();
-      return (
+      const rows = (
         unwrap(
           await client
             .from("requests")
@@ -192,6 +207,7 @@ export function createSupabaseDataSource(clientOverride = null) {
             }),
         ) ?? []
       ).map(mapRequest);
+      return withStampFacts(rows);
     },
     decisionHistory: async (l = null) => {
       const u = (
@@ -205,9 +221,11 @@ export function createSupabaseDataSource(clientOverride = null) {
             }),
         ) ?? []
       ).map(mapRequest);
-      if (!(l != null && l.length)) return u;
+      if (!(l != null && l.length)) return withStampFacts(u);
       const h = await profilesById();
-      return u.filter((d) => l.some((f) => belongsToTeam(h.get(d.userId), f)));
+      return withStampFacts(
+        u.filter((d) => l.some((f) => belongsToTeam(h.get(d.userId), f))),
+      );
     },
     outOnDay: async (l, u = null) => {
       const h = (
@@ -345,7 +363,8 @@ export function createSupabaseDataSource(clientOverride = null) {
               start: d.start,
               end: d.end,
               holiday_id: d.holidayId || null,
-              note: ((h = d.note ?? l.note) == null ? void 0 : h.trim()) || null,
+              note:
+                ((h = d.note ?? l.note) == null ? void 0 : h.trim()) || null,
             };
           }),
         }),
@@ -369,25 +388,21 @@ export function createSupabaseDataSource(clientOverride = null) {
       ),
       requestById(l)
     ),
-    approveRequest: async (l) => (await decide(l, !0, null), requestById(l)),
-    denyRequest: async (l, u) => (await decide(l, !1, u), requestById(l)),
-    approveMany: async (l) => {
-      const u = [],
-        h = [];
-      for (const d of l)
-        try {
-          (await decide(d, !0, null), u.push(await requestById(d)));
-        } catch (f) {
-          h.push({
-            id: d,
-            reason: f.message,
-          });
-        }
-      return {
-        approved: u,
-        failed: h,
-      };
-    },
+    // One stamp at a time: the database grants the request once both slots are settled.
+    stampRequest: async (l, u, h = !1) => (
+      await stamp(l, u, h),
+      requestById(l)
+    ),
+    unstampRequest: async (l, u) => (await unstamp(l, u), requestById(l)),
+    denyRequest: async (l, u) => (
+      unwrap(
+        await client.rpc("deny_request", {
+          p_request_id: l,
+          p_reason: u,
+        }),
+      ),
+      requestById(l)
+    ),
     setGrant: async (l, u, h) =>
       unwrap(
         await client.rpc("set_pto_grant", {
@@ -620,13 +635,5 @@ export function createSupabaseDataSource(clientOverride = null) {
         temporaryPassword: data.temporaryPassword,
       };
     },
-    undoDecision: async (l) => (
-      unwrap(
-        await client.rpc("undo_decision", {
-          p_request_id: l,
-        }),
-      ),
-      requestById(l)
-    ),
   };
 }

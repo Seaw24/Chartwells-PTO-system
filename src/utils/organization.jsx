@@ -30,7 +30,7 @@ export function teamInitials(e = "") {
 export const Ox = (e) => new Date(e.includes("T") ? e : `${e}T00:00:00`);
 export const $S = (e) =>
   e
-    ? Ox(e).toLocaleDateString("en-canManageTeam", {
+    ? Ox(e).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
@@ -38,7 +38,7 @@ export const $S = (e) =>
     : "";
 export const AS = (e) =>
   e
-    ? Ox(e).toLocaleDateString("en-canManageTeam", {
+    ? Ox(e).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",

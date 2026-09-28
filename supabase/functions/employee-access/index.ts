@@ -113,17 +113,24 @@ Deno.serve(async (req) => {
       const types = (await must(
         admin.from("pto_types").select("id,default_days").eq("is_active", true),
       )) as { id: string; default_days: number }[];
+      // The deployed database provisions these itself from an after-insert trigger on profiles,
+      // so the rows may already be there; this repo's bootstrap has no such trigger and needs them
+      // written here. Ignoring the conflict is what makes one function work against both.
       if (types.length)
         await must(
           admin
             .from("pto_grants")
-            .insert(
+            .upsert(
               types.map((type) => ({
                 user_id: id,
                 pto_type_id: type.id,
                 leave_year: new Date().getFullYear(),
                 amount: type.default_days,
               })),
+              {
+                onConflict: "user_id,pto_type_id,leave_year",
+                ignoreDuplicates: true,
+              },
             ),
         );
       const profile = await must(

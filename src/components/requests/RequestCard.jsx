@@ -13,6 +13,7 @@ import { lineDays } from "../../utils/requestHelpers.jsx";
 import { timeAgo } from "../../utils/dateHelpers.jsx";
 import { firstName } from "../../utils/constants.jsx";
 import { Button } from "../ui/Button.jsx";
+import { StampSlots } from "./StampSlots.jsx";
 import { isWellnessGrant } from "../../utils/requestHelpers.jsx";
 import { WellnessPill } from "./Wellness.jsx";
 import { wellnessCardStyle } from "./Wellness.jsx";
@@ -41,7 +42,7 @@ export function TimeOffRequestCard({ request: request, onCancel: onCancel }) {
     u = requestLines(request),
     h = u.length > 1,
     d = requestDays(request, c),
-    f = userById(request.decidedBy),
+    f = request.decidedByName ?? userById(request.decidedBy)?.name ?? null,
     holidayIssue = useHolidayIssue(request);
   return (
     React.useEffect(() => {
@@ -124,9 +125,12 @@ export function TimeOffRequestCard({ request: request, onCancel: onCancel }) {
             <span>
               {request.status === "approved" ? "Approved" : "Denied"}
               {" by "}
-              {firstName(f.name)}
+              {firstName(f)}
             </span>
           )}
+        </div>
+        <div className="mt-3">
+          <StampSlots request={request} size="sm" />
         </div>
         <HolidayIssueNotice
           issue={holidayIssue}
@@ -172,7 +176,8 @@ export function TimeOffRequestCard({ request: request, onCancel: onCancel }) {
 export function WellnessRequestCard({ request: request, onCancel: onCancel }) {
   const { userById: userById, ptoTypeById: ptoTypeById } = useCatalog(),
     today = useToday(),
-    decider = userById(request.decidedBy),
+    decider =
+      request.decidedByName ?? userById(request.decidedBy)?.name ?? null,
     typeName = ptoTypeById(request.grantTypeId)?.name ?? "Wellness Day",
     days = request.grantDays;
   return (
@@ -212,7 +217,7 @@ export function WellnessRequestCard({ request: request, onCancel: onCancel }) {
           <span>
             {request.status === "approved" ? "Approved" : "Denied"}
             {" by "}
-            {firstName(decider.name)}
+            {firstName(decider)}
           </span>
         )}
       </div>
@@ -239,11 +244,7 @@ export function WellnessRequestCard({ request: request, onCancel: onCancel }) {
           className="mt-auto flex justify-end border-t pt-3.5"
           style={wellnessDividerStyle}
         >
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onCancel(request)}
-          >
+          <Button variant="outline" size="sm" onClick={() => onCancel(request)}>
             {"Cancel request"}
           </Button>
         </div>

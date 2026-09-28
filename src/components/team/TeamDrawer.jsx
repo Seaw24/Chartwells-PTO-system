@@ -10,7 +10,7 @@ import { Avatar } from "../ui/Avatar.jsx";
 import { RolePill } from "../ui/RolePill.jsx";
 export const formatAddedDate = (e) =>
   e
-    ? new Date(`${e}T00:00:00`).toLocaleDateString("en-canManageTeam", {
+    ? new Date(`${e}T00:00:00`).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",

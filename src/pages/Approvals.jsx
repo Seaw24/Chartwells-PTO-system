@@ -19,9 +19,11 @@ import { differenceInCalendarDays as Vendor_differenceInCalendarDays } from "dat
 import { toDateLocal } from "../utils/dateHelpers.jsx";
 import { Inbox as Vendor_Inbox } from "lucide-react";
 import { History as Vendor_History } from "lucide-react";
+import { Clock as Vendor_Clock } from "lucide-react";
 import { firstName } from "../utils/constants.jsx";
 import { SegmentedControl } from "../components/ui/SegmentedControl.jsx";
-import { REQUEST_TABS } from "./MyRequests.jsx";
+import { canStampSlot } from "../utils/requestHelpers.jsx";
+import { StampSlots } from "../components/requests/StampSlots.jsx";
 import { Search as Vendor_Search } from "lucide-react";
 import { ChevronDown as Vendor_ChevronDown } from "lucide-react";
 import { FilterDropdown } from "../components/ui/FilterDropdown.jsx";
@@ -38,6 +40,49 @@ import { fmtDateTime } from "../utils/dateHelpers.jsx";
 import { PersonRequestsPanel } from "../components/requests/PersonRequestsPanel.jsx";
 import { RequestDetailModal } from "../components/requests/RequestDetailModal.jsx";
 import { Skeleton } from "../components/ui/Skeleton.jsx";
+// Six tabs: the two pending ones split by whose stamp is missing.
+export const APPROVAL_TABS = (waitingLabel) => [
+  { value: "all", label: "All" },
+  { value: "needs_me", label: "Needs me" },
+  { value: "waiting", label: waitingLabel },
+  { value: "approved", label: "Approved" },
+  { value: "denied", label: "Rejected" },
+  { value: "past", label: "Past" },
+];
+// One entry per APPROVAL_TABS value: an empty tab reads its copy from here by tab value.
+export const APPROVAL_EMPTY_STATES = {
+  all: {
+    icon: Vendor_Inbox,
+    title: "Nothing here yet",
+    description: "Requests from your team appear here as they come in.",
+  },
+  needs_me: {
+    icon: Vendor_Inbox,
+    title: "Inbox zero",
+    description: "No requests are waiting on your stamp right now.",
+  },
+  waiting: {
+    icon: Vendor_Clock,
+    title: "Nothing waiting on anyone else",
+    description:
+      "Requests you have stamped wait here until the other admin stamps them.",
+  },
+  approved: {
+    icon: Vendor_History,
+    title: "No approved time off ahead",
+    description: "Time off you approve shows here until the dates pass.",
+  },
+  denied: {
+    icon: Vendor_History,
+    title: "No rejected requests",
+    description: "Requests you could not approve show here.",
+  },
+  past: {
+    icon: Vendor_History,
+    title: "Nothing in the past yet",
+    description: "Time off that has already been taken shows here.",
+  },
+};
 export function Approvals() {
   var Dt, Jr, Na, Sa;
   const [saving, setSaving] = React.useState(false);
@@ -61,14 +106,12 @@ export function Approvals() {
     {
       pendingForApprover: pendingForApprover,
       decisionHistory: decisionHistory,
-      approveRequest: approveRequest,
       denyRequest: denyRequest,
-      approveMany: approveMany,
-      undoDecision: undoDecision,
     } = useDataSource(),
     {
       ptoTypes: ptoTypes,
       holidays: holidays,
+      users: users,
       userById: userById,
       teamById: teamById,
     } = useCatalog(),
@@ -76,7 +119,6 @@ export function Approvals() {
     f = isGodAdmin(e.role),
     [g, k] = React.useState("all"),
     [v, m] = React.useState("all"),
-    [x, b] = React.useState(new Set()),
     [N, _] = React.useState(""),
     [j, S] = React.useState("oldest"),
     [R, E] = React.useState(null),
@@ -109,6 +151,15 @@ export function Approvals() {
     }, [P, Z]),
     X = !f && P.length >= 2 ? P : null,
     V = X ? X.join(",") : "all";
+  // "Needs me" is the cards where my own slot is still empty; once I stamp, the card moves to
+  // "Waiting on …" until the other slot lands.
+  const needsMe = React.useCallback(
+      (request) =>
+        canStampSlot(e, request, "god", users) ||
+        canStampSlot(e, request, "team", users),
+      [e, users],
+    ),
+    waitingLabel = f ? "Waiting on team admin" : "Waiting on god admin";
   const { data: p = null } = useResource(
     ["approvals", V],
     async () => {
@@ -162,9 +213,18 @@ export function Approvals() {
           : A,
       [A, $, v],
     ),
+    Bt = React.useMemo(
+      () =>
+        g === "needs_me"
+          ? B.filter(needsMe)
+          : g === "waiting"
+            ? B.filter((F) => !needsMe(F))
+            : B,
+      [B, g, needsMe],
+    ),
     fe = React.useMemo(() => {
       const F = N.trim().toLowerCase(),
-        se = B.filter((tt) => {
+        se = Bt.filter((tt) => {
           var ei;
           return F
             ? `${(ei = userById(tt.userId)) == null ? void 0 : ei.name} ${requestTypeLabel(tt, ptoTypes)}`
@@ -180,7 +240,7 @@ export function Approvals() {
             ? -pe(tt, Lt)
             : requestDays(Lt) - requestDays(tt),
       );
-    }, [B, N, j]),
+    }, [Bt, N, j]),
     ye = React.useMemo(() => {
       const F = N.trim().toLowerCase();
       return ae.filter((se) => {
@@ -195,10 +255,10 @@ export function Approvals() {
       });
     }, [ae, g, N, t]),
     Q = React.useMemo(() => requestCounts([...B, ...ae], t), [B, ae, t]),
-    Y = g === "all" || g === "pending",
-    ee = g !== "pending",
+    Y = g === "all" || g === "needs_me" || g === "waiting",
+    ee = g === "all" || ["approved", "denied", "past"].includes(g),
     Pe =
-      (Y ? B.length : 0) +
+      (Y ? Bt.length : 0) +
       (ee ? ae.filter((F) => matchesRequestTab(F, g, t)).length : 0),
     ve = (Y ? fe.length : 0) + (ee ? ye.length : 0),
     _e = React.useMemo(() => {
@@ -228,74 +288,22 @@ export function Approvals() {
       ? "Loading your queue…"
       : g === "all"
         ? `${Q.pending} pending · ${Q.approved} approved · ${Q.denied} rejected`
-        : g === "pending"
-          ? Q.pending === 0
-            ? "You're all caught up. No requests are waiting on you."
-            : `${Q.pending} request${Q.pending === 1 ? "" : "s"} waiting on you${_e >= 2 ? ` · oldest waited ${_e} days` : ""}`
-          : g === "approved"
-            ? `${Q.approved} approved request${Q.approved === 1 ? "" : "s"} still ahead ${mt}.`
-            : g === "denied"
-              ? `${Q.denied} rejected request${Q.denied === 1 ? "" : "s"} ${mt}.`
-              : `${Q.past} request${Q.past === 1 ? "" : "s"} already taken ${mt}.`,
-    W = {
-      all: {
-        icon: Vendor_Inbox,
-        title: "Nothing here yet",
-        description: "Requests from your team appear here as they come in.",
-      },
-      pending: {
-        icon: Vendor_Inbox,
-        title: "Inbox zero",
-        description: "No requests are waiting on you right now.",
-      },
-      approved: {
-        icon: Vendor_History,
-        title: "No approved time off ahead",
-        description: "Time off you approve shows here until the dates pass.",
-      },
-      denied: {
-        icon: Vendor_History,
-        title: "No rejected requests",
-        description: "Requests you could not approve show here.",
-      },
-      past: {
-        icon: Vendor_History,
-        title: "Nothing in the past yet",
-        description: "Time off that has already been taken shows here.",
-      },
-    },
-    we = (F) => {
-      const se = new Set(x);
-      (se.has(F) ? se.delete(F) : se.add(F), b(se));
-    },
-    be = (request) =>
-      runDecision(async () => {
-        await approveRequest(request.id);
-        d(`Approved ${firstName(userById(request.userId)?.name)}'s request.`, {
-          kind: "success",
-        });
-      }),
+        : g === "needs_me"
+          ? Bt.length === 0
+            ? "You're all caught up. No requests are waiting on your stamp."
+            : `${Bt.length} request${Bt.length === 1 ? "" : "s"} waiting on your stamp${_e >= 2 ? ` · oldest waited ${_e} days` : ""}`
+          : g === "waiting"
+            ? `${Bt.length} request${Bt.length === 1 ? "" : "s"} you stamped, ${f ? "waiting on a team admin" : "waiting on a god admin"}.`
+            : g === "approved"
+              ? `${Q.approved} approved request${Q.approved === 1 ? "" : "s"} still ahead ${mt}.`
+              : g === "denied"
+                ? `${Q.denied} rejected request${Q.denied === 1 ? "" : "s"} ${mt}.`
+                : `${Q.past} request${Q.past === 1 ? "" : "s"} already taken ${mt}.`,
     cn = (request, reason) =>
       runDecision(async () => {
         await denyRequest(request.id, reason);
         d("Request rejected.", { kind: "info" });
-      }),
-    un = () =>
-      runDecision(async () => {
-        const result = await approveMany([...x]);
-        if (result.approved.length)
-          d(
-            `Approved ${result.approved.length} request${result.approved.length === 1 ? "" : "s"}.`,
-            { kind: "success" },
-          );
-        if (result.failed.length)
-          d(`${result.failed.length} skipped: ${result.failed[0].reason}`, {
-            kind: "error",
-          });
-        b(new Set(result.failed.map((item) => item.id)));
       });
-  // A Holiday Day Off whose holiday was removed or moved can't be approved, so bulk select skips it.
-  const approvable = fe.filter((F) => !requestHolidayIssue(F, holidays));
   return (
     <fieldset
       disabled={saving}
@@ -312,7 +320,7 @@ export function Approvals() {
           <p className="mt-2 text-[13px] font-medium text-ink-soft">{jt}</p>
         </div>
         <SegmentedControl
-          options={REQUEST_TABS}
+          options={APPROVAL_TABS(waitingLabel)}
           value={g}
           onChange={k}
           size="sm"
@@ -372,9 +380,9 @@ export function Approvals() {
       ) : Pe === 0 ? (
         <div className="rounded-card border border-line bg-card shadow-card">
           <EmptyState
-            icon={W[g].icon}
-            title={W[g].title}
-            description={W[g].description}
+            icon={APPROVAL_EMPTY_STATES[g].icon}
+            title={APPROVAL_EMPTY_STATES[g].title}
+            description={APPROVAL_EMPTY_STATES[g].description}
             className="py-14"
           />
         </div>
@@ -392,48 +400,12 @@ export function Approvals() {
           {Y && fe.length > 0 && (
             <section className="space-y-3">
               {g === "all" && <p className="eyebrow">{"Waiting on you"}</p>}
-              {f && (
-                <div className="sticky top-0 z-10 flex items-center justify-between rounded-card border border-line bg-card/95 px-4 py-2.5 shadow-card backdrop-blur">
-                  <label className="flex items-center gap-2 text-sm font-medium text-ink-soft">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-accent"
-                      checked={x.size === approvable.length && approvable.length > 0}
-                      onChange={(F) =>
-                        b(
-                          F.target.checked
-                            ? new Set(approvable.map((se) => se.id))
-                            : new Set(),
-                        )
-                      }
-                    />
-                    {"Select all"}
-                    {x.size > 0 && (
-                      <span className="text-ink-mute">
-                        {"· "}
-                        {x.size}
-                        {" selected"}
-                      </span>
-                    )}
-                  </label>
-                  {x.size > 0 && (
-                    <Button variant="success" size="sm" onClick={un}>
-                      {"Approve "}
-                      {x.size}
-                    </Button>
-                  )}
-                </div>
-              )}
               <div className="space-y-3">
                 {fe.map((F, se) => (
                   <ApprovalCard
                     index={se}
                     request={F}
-                    onApprove={be}
                     onDeny={cn}
-                    selectable={f}
-                    selected={x.has(F.id)}
-                    onToggleSelect={() => we(F.id)}
                     onOpenPerson={E}
                     onOpenDetail={(pe) => C(pe.id)}
                     key={F.id}
@@ -449,16 +421,9 @@ export function Approvals() {
                 <ul className="divide-y divide-line-soft">
                   {ye.map((F) => {
                     const se = userById(F.userId),
-                      pe = userById(F.decidedBy),
-                      tt = F.decidedBy === e.id,
-                      Lt =
-                        tt &&
-                        F.status === "approved" &&
-                        F.decidedAt &&
-                        Vendor_differenceInHours(
-                          toDateLocal(t),
-                          toDateLocal(F.decidedAt),
-                        ) <= 24;
+                      pe =
+                        F.decidedByName ?? userById(F.decidedBy)?.name ?? null,
+                      tt = F.decidedBy === e.id;
                     return (
                       <li
                         className="px-4 py-3 transition-colors hover:bg-panel/40"
@@ -492,31 +457,13 @@ export function Approvals() {
                             <p className="text-xs font-medium text-ink-soft">
                               {F.status === "approved" ? "Approved" : "Denied"}
                               {" by "}
-                              {tt
-                                ? "you"
-                                : firstName(pe == null ? void 0 : pe.name) ||
-                                  "—"}
+                              {tt ? "you" : firstName(pe) || "—"}
                             </p>
                             <p className="text-[11px] tabular text-ink-mute">
                               {F.decidedAt && fmtDateTime(F.decidedAt)}
                             </p>
                           </div>
-                          {Lt && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                undoDecision(F.id).then(() => {
-                                  (I(),
-                                    d("Approval reverted to pending.", {
-                                      kind: "info",
-                                    }));
-                                });
-                              }}
-                            >
-                              {"Undo"}
-                            </Button>
-                          )}
+                          <StampSlots request={F} size="sm" />
                         </div>
                         {F.status === "denied" && F.denialReason && (
                           <p className="mt-2 flex gap-1.5 pl-11 text-xs text-ink-soft">

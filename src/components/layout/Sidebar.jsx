@@ -4,6 +4,8 @@ import { useDataSource } from "../../data/dataSource.jsx";
 import { useResource } from "../../hooks/useResource.jsx";
 import { useLocation as Vendor_useLocation } from "react-router-dom";
 import { canApprove } from "../../utils/constants.jsx";
+import { canStampSlot } from "../../utils/requestHelpers.jsx";
+import { useCatalog } from "../../context/CatalogContext.jsx";
 import { LayoutDashboard as Vendor_LayoutDashboard } from "lucide-react";
 import { Calendar as Vendor_Calendar } from "lucide-react";
 import { Mail as Vendor_Mail } from "lucide-react";
@@ -125,6 +127,7 @@ export function Sidebar({
         localStorage.setItem(Hu, String(bo));
       } catch {}
     };
+  const { users: users } = useCatalog();
   const { data: i } = useResource(["sidebar-requests"], () =>
     requestsForUser(n.id),
   );
@@ -134,7 +137,11 @@ export function Sidebar({
     canApprove(n?.role),
   );
   const N = (i ?? []).filter((E) => E.status === "pending").length,
-    _ = (c ?? []).length,
+    // "Needs me": the other side's stamp is not my queue.
+    _ = (c ?? []).filter(
+      (E) =>
+        canStampSlot(n, E, "god", users) || canStampSlot(n, E, "team", users),
+    ).length,
     j = [
       {
         to: "/",

@@ -26,6 +26,7 @@ import { wellnessDividerStyle } from "./Wellness.jsx";
 import { useHolidayIssue } from "./HolidayDayOff.jsx";
 import { HolidayIssueNotice } from "./HolidayDayOff.jsx";
 import { HolidayBalance } from "./HolidayDayOff.jsx";
+import { StampSlots } from "./StampSlots.jsx";
 import { holidayIssueCardStyle } from "./HolidayDayOff.jsx";
 import { holidayIssueDividerStyle } from "./HolidayDayOff.jsx";
 export function ApprovalCard(e) {
@@ -173,33 +174,37 @@ export function TimeOffApprovalCard({
           />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-            <button
-              type="button"
-              onClick={($) => {
-                ($.stopPropagation(),
-                  onOpenPerson == null ||
-                    onOpenPerson(S == null ? void 0 : S.id));
-              }}
-              className="group/name min-w-0 text-left"
-              title="View all requests"
-            >
-              <p className="truncate font-bold tracking-tight text-ink transition-colors group-hover/name:text-accent-ink">
-                {S == null ? void 0 : S.name}
-              </p>
-            </button>
-            <div className="mt-0.5 basis-full">
-              <UserTeams user={S} variant="inline" />
+          {/* The seals are the decision, so they sit level with the name rather than under the card. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-4">
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={($) => {
+                  ($.stopPropagation(),
+                    onOpenPerson == null ||
+                      onOpenPerson(S == null ? void 0 : S.id));
+                }}
+                className="group/name min-w-0 text-left"
+                title="View all requests"
+              >
+                <p className="truncate font-bold tracking-tight text-ink transition-colors group-hover/name:text-accent-ink">
+                  {S == null ? void 0 : S.name}
+                </p>
+              </button>
+              <UserTeams user={S} variant="inline" className="mt-0.5" />
+              <span
+                className="mt-1 block text-xs font-medium"
+                style={{
+                  color: P,
+                }}
+              >
+                {"Submitted "}
+                {timeAgo(request.submittedAt, v)}
+              </span>
             </div>
-            <span
-              className="shrink-0 text-xs font-medium"
-              style={{
-                color: P,
-              }}
-            >
-              {"Submitted "}
-              {timeAgo(request.submittedAt, v)}
-            </span>
+            <div onClick={($) => $.stopPropagation()}>
+              <StampSlots request={request} />
+            </div>
           </div>
           {R.length === 1 ? (
             <div className="mt-3.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -372,7 +377,7 @@ export function TimeOffApprovalCard({
               </div>
             </div>
           ) : (
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="mt-4 flex items-center justify-end gap-4">
               <Button
                 variant="danger"
                 size="sm"
@@ -381,16 +386,6 @@ export function TimeOffApprovalCard({
                 }}
               >
                 {"Deny"}
-              </Button>
-              <Button
-                variant="success"
-                size="sm"
-                disabled={!!holidayIssue}
-                onClick={($) => {
-                  ($.stopPropagation(), onApprove(request));
-                }}
-              >
-                {"Approve"}
               </Button>
             </div>
           )}
@@ -481,29 +476,32 @@ export function WellnessApprovalCard({
           <Avatar name={person?.name} id={person?.id} size="md" />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-            <button
-              type="button"
-              onClick={openPerson}
-              className="group/name min-w-0 text-left"
-              title="View all requests"
-            >
-              <p className="truncate font-bold tracking-tight text-ink transition-colors group-hover/name:text-accent-ink">
-                {person?.name}
-              </p>
-            </button>
-            <div className="mt-0.5 basis-full">
-              <UserTeams user={person} variant="inline" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-4">
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={openPerson}
+                className="group/name min-w-0 text-left"
+                title="View all requests"
+              >
+                <p className="truncate font-bold tracking-tight text-ink transition-colors group-hover/name:text-accent-ink">
+                  {person?.name}
+                </p>
+              </button>
+              <UserTeams user={person} variant="inline" className="mt-0.5" />
+              <span
+                className="mt-1 block text-xs font-medium"
+                style={{
+                  color: waitedColor(waited),
+                }}
+              >
+                {"Submitted "}
+                {timeAgo(request.submittedAt, today)}
+              </span>
             </div>
-            <span
-              className="shrink-0 text-xs font-medium"
-              style={{
-                color: waitedColor(waited),
-              }}
-            >
-              {"Submitted "}
-              {timeAgo(request.submittedAt, today)}
-            </span>
+            <div onClick={($) => $.stopPropagation()}>
+              <StampSlots request={request} />
+            </div>
           </div>
           <div className="mt-3.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <WellnessPill />
@@ -609,7 +607,7 @@ export function WellnessApprovalCard({
               </div>
             </div>
           ) : (
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="mt-4 flex items-center justify-end gap-4">
               <Button
                 variant="danger"
                 size="sm"
@@ -618,15 +616,6 @@ export function WellnessApprovalCard({
                 }}
               >
                 {"Deny"}
-              </Button>
-              <Button
-                variant="success"
-                size="sm"
-                onClick={($) => {
-                  ($.stopPropagation(), onApprove(request));
-                }}
-              >
-                {"Approve"}
               </Button>
             </div>
           )}

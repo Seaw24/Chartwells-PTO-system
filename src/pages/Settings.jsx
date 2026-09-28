@@ -1118,6 +1118,8 @@ export function TeamSettings({
     [u, l] = React.useState(null),
     h = (b) => p || r.isTeamAdmin(a.id, b),
     s = p ? r.teams : r.teams.filter((b) => r.isTeamAdmin(a.id, b.id)),
+    // God Admins see and manage everything, so they are never assigned to a team - including
+    // yourself. add_team_memberships rejects them, so never offer one in the picker.
     d = r.people.filter((b) => b.orgRole !== "god_admin");
   React.useEffect(() => {
     openTeamId &&
