@@ -33,6 +33,7 @@ const configWrites = new Set([
   "setProfileActive",
   "provisionEmployee",
   "setNormalDaysOff",
+  "setLeaveReset",
 ]);
 const reads = new Set([
   "getRequests",
@@ -46,6 +47,7 @@ const reads = new Set([
   "balanceFor",
   "normalDaysOffFor",
   "getGrants",
+  "leaveAllowances",
   "getUsers",
   "getTeams",
   "getPtoTypes",

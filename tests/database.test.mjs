@@ -57,6 +57,12 @@ try {
   await db.exec(
     fs.readFileSync("supabase/migrations/202609280001_hr_booking.sql", "utf8"),
   );
+  await db.exec(
+    fs.readFileSync(
+      "supabase/migrations/202609280002_leave_year_reset.sql",
+      "utf8",
+    ),
+  );
 } catch (error) {
   console.error(error.message, error.position);
   process.exit(1);
@@ -968,5 +974,130 @@ test("the internal file-as-someone functions are not callable from the browser",
       hHr,
     ]),
     /permission denied/,
+  );
+});
+
+// Leave years per type. Fixed far-future dates keep these independent of today; HR bookings are used
+// to file them because they may be in the past by the time this runs.
+const lyType = "00000000-0000-0000-0000-0000000000c1";
+const one = async (sql, args = []) => (await asOwner(sql, args)).rows[0];
+test("Vacation keeps its current allowance until its first Oct 1 reset in 2027", async () => {
+  // The migration's Vacation update ran before this file's data existed. Running it again sets it,
+  // and shows the migration is safe to re-run.
+  await db.exec("reset role");
+  await db.exec(
+    fs.readFileSync("supabase/migrations/202609280002_leave_year_reset.sql", "utf8"),
+  );
+  const vac = await one(
+    "select reset_month, reset_day, first_reset::text from pto_types where id=$1",
+    [type],
+  );
+  assert.deepEqual(vac, { reset_month: 10, reset_day: 1, first_reset: "2027-10-01" });
+  const y = await one(
+    `select leave_year_for($1,'2025-06-01') a, leave_year_for($1,'2026-03-01') b,
+            leave_year_for($1,'2027-09-30') c, leave_year_for($1,'2027-10-01') d,
+            leave_year_start($1,2026)::text s26, leave_year_end($1,2026)::text e26,
+            leave_year_start($1,2027)::text s27, leave_year_end($1,2027)::text e27,
+            leave_year_end($1,2025)::text e25, leave_year_label($1,2027) l27`,
+    [type],
+  );
+  assert.deepEqual(y, {
+    a: 2025, b: 2026, c: 2026, d: 2027,
+    s26: "2026-01-01", e26: "2027-09-30",
+    s27: "2027-10-01", e27: "2028-09-30",
+    e25: "2025-12-31", l27: "Oct 1, 2027 – Sep 30, 2028",
+  });
+  // A type still on Jan 1 reads as plain calendar years.
+  assert.equal(
+    (await one("select leave_year_label($1,2027) l", [wellness])).l,
+    "2027",
+  );
+});
+test("a request crossing a reset day is charged to each leave year it touches", async () => {
+  await asOwner(
+    `insert into pto_types(id,name,default_days,reset_month,reset_day,first_reset)
+     values('${lyType}','Reset Test',3,3,1,'2030-03-01')`,
+  );
+  // Feb 27-28, 2030 fall in the 2029 leave year (Jan 1, 2029 - Feb 28, 2030); Mar 1 and Mar 4 in 2030.
+  await book(hEmp, [{ type_id: lyType, start: "2030-02-27", end: "2030-03-04" }]);
+  assert.deepEqual(
+    await one(
+      "select pto_used($1,$2,2029) y29, pto_used($1,$2,2030) y30, pto_balance($1,$2,2030) left30",
+      [hEmp, lyType],
+    ),
+    { y29: 2, y30: 2, left30: 1 },
+  );
+  await assert.rejects(
+    book(hEmp, [{ type_id: lyType, start: "2030-03-05", end: "2030-03-06" }]),
+    /Reset Test balance is short for Hana for Mar 1, 2030 – Feb 28, 2031\. This needs 2 day\(s\) but only 1 remain/,
+  );
+});
+test("a new leave year starts from the person's last amount, without Wellness Day top-ups", async () => {
+  await asOwner(
+    `insert into pto_grants(user_id,pto_type_id,leave_year,amount) values('${hEmp}','${lyType}',2029,7)`,
+  );
+  assert.equal(
+    (await one("select grant_amount($1,$2,2031) n", [hEmp, lyType])).n,
+    7,
+  );
+  // Someone who never had a row gets the type's default.
+  assert.equal(
+    (await one("select grant_amount($1,$2,2031) n", [hLead, lyType])).n,
+    3,
+  );
+  // A Wellness Day top-up adds to this leave year only.
+  const year = (await one("select leave_year_for($1,current_date) y", [wellness])).y;
+  const id = (
+    await as(hEmp, "select submit_wellness_request(3,$1) id", ["Recharge"])
+  ).rows[0].id;
+  await as(hLead, "select stamp_request($1,'team')", [id]);
+  await as(hHr, "select stamp_request($1,'god')", [id]);
+  assert.deepEqual(
+    await one(
+      "select grant_amount($1,$2,$3) this_year, grant_amount($1,$2,$3+1) next_year",
+      [hEmp, wellness, year],
+    ),
+    { this_year: 5, next_year: 2 },
+  );
+});
+test("allowances are readable by the person, their managers and HR only", async () => {
+  const rows = async (who, whose) =>
+    (
+      await as(who, "select * from leave_allowances($1)", [whose])
+    ).rows;
+  const own = await rows(hEmp, hEmp);
+  assert.ok(own.length > 0);
+  assert.ok(own.every((r) => r.user_id === hEmp));
+  // Last, this and next leave year for every type with a yearly allowance.
+  assert.equal(
+    new Set(own.filter((r) => r.pto_type_id === type).map((r) => r.leave_year)).size,
+    3,
+  );
+  assert.equal((await rows(hEmp, hLead)).length, 0);
+  assert.ok((await rows(hLead, hEmp)).length > 0);
+  assert.ok((await rows(hHr, hEmp)).length > 0);
+  await assert.rejects(
+    as(hEmp, "select grant_amount($1,$2,2030)", [hEmp, type]),
+    /permission denied/,
+  );
+});
+test("only HR changes when a type resets, and only from a future date on that day", async () => {
+  const set = (who, m, d, from) =>
+    as(who, "select set_leave_reset($1,$2,$3,$4::date)", [lyType, m, d, from]);
+  await assert.rejects(set(hLead, 7, 1, "2031-07-01"), /Only HR/);
+  await assert.rejects(set(hHr, 2, 29, "2032-02-29"), /February 29/);
+  await assert.rejects(set(hHr, 7, 1, "2031-08-01"), /fall on the reset day/);
+  await assert.rejects(
+    as(hHr, "select set_leave_reset($1,7,1,current_date - 1)", [lyType]),
+    /future date/,
+  );
+  await set(hHr, 7, 1, "2031-07-01");
+  // Years before the first reset under the new rule are calendar years again.
+  assert.deepEqual(
+    await one(
+      "select leave_year_end($1,2030)::text e30, leave_year_start($1,2031)::text s31",
+      [lyType],
+    ),
+    { e30: "2031-06-30", s31: "2031-07-01" },
   );
 });

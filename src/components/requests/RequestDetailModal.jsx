@@ -1,3 +1,4 @@
+import { requestStart } from "../../utils/requestHelpers.jsx";
 import { useResource } from "../../hooks/useResource.jsx";
 import { Clock as Vendor_Clock } from "lucide-react";
 import { Check as Vendor_Check } from "lucide-react";
@@ -172,8 +173,9 @@ export function RequestDetailModal({
         Promise.all(
           types.map(async (type) => ({
             type,
-            balance: await balanceFor(req.userId, type),
-            grant: await grantFor(req.userId, type),
+            // The leave year the request starts in, which is not always today's.
+            balance: await balanceFor(req.userId, type, requestStart(req)),
+            grant: await grantFor(req.userId, type, requestStart(req)),
           })),
         ),
         normalDaysOffFor(req.userId),

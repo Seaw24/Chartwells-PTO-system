@@ -1,3 +1,4 @@
+import { requestStart } from "../../utils/requestHelpers.jsx";
 import { useCatalog } from "../../context/CatalogContext.jsx";
 import { useDataSource } from "../../data/dataSource.jsx";
 import { useToday } from "../../data/today.jsx";
@@ -75,8 +76,13 @@ export function TimeOffApprovalCard({
     const U = requestTypeIds(request);
     return (
       Promise.all([
-        Promise.all(U.map((X) => balanceFor(request.userId, X))),
-        Promise.all(U.map((X) => grantFor(request.userId, X))),
+        // The leave year the request starts in, which is not always today's.
+        Promise.all(
+          U.map((X) => balanceFor(request.userId, X, requestStart(request))),
+        ),
+        Promise.all(
+          U.map((X) => grantFor(request.userId, X, requestStart(request))),
+        ),
         normalDaysOffFor(request.userId),
         getRequests(),
       ]).then(([X, V, he, K]) => {

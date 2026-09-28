@@ -110,6 +110,10 @@ export const mapPtoType = (e) => ({
   isActive: e.is_active,
   isWellness: !!e.is_wellness,
   isHolidayDayOff: !!e.is_holiday_day_off,
+  // When the yearly allowance resets, and the first reset under that rule (see leaveYear.jsx).
+  resetMonth: e.reset_month ?? 1,
+  resetDay: e.reset_day ?? 1,
+  firstReset: e.first_reset ?? null,
   createdAt: e.created_at,
   createdBy: e.created_by,
   updatedAt: e.updated_at,
@@ -164,3 +168,14 @@ export const unwrap = (
   return data;
 };
 export const leaveYear = (e) => Number(new Date().toISOString().slice(0, 4));
+// One row of leave_allowances(): a person's allowance for one type in one leave year.
+export const mapAllowance = (e) => ({
+  userId: e.user_id,
+  typeId: e.pto_type_id,
+  leaveYear: e.leave_year,
+  startsOn: e.starts_on,
+  endsOn: e.ends_on,
+  amount: e.amount,
+  used: e.used,
+  balance: e.amount - e.used,
+});

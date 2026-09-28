@@ -62,6 +62,11 @@ function client(tables = {}, failure) {
     },
     rpc: async (name, args) => {
       calls.push([name, args]);
+      if (name === "leave_allowances")
+        return {
+          data: failure?.(name) ? null : (tables.leave_allowances ?? []),
+          error: failure?.(name) ?? null,
+        };
       if (args.p_request_id === "bad")
         return { data: null, error: { message: "Not authorized" } };
       return { data: null, error: null };
@@ -69,17 +74,18 @@ function client(tables = {}, failure) {
   };
   return api;
 }
-test("balance reads share grants, schedules, and approved requests across PTO types", async () => {
+test("balance reads share one leave_allowances read across PTO types", async () => {
   const year = new Date().getFullYear();
-  const api = client({
-    profiles: [{ id: "u", normal_days_off: [0, 6] }],
-    holidays: [],
-    pto_grants: [
-      { user_id: "u", pto_type_id: "v", leave_year: year, amount: 10 },
-      { user_id: "u", pto_type_id: "s", leave_year: year, amount: 5 },
-    ],
-    requests: [],
+  const row = (type, amount, used) => ({
+    user_id: "u",
+    pto_type_id: type,
+    leave_year: year,
+    starts_on: `${year}-01-01`,
+    ends_on: `${year}-12-31`,
+    amount,
+    used,
   });
+  const api = client({ leave_allowances: [row("v", 10, 0), row("s", 5, 0)] });
   const source = createSupabaseDataSource(api);
   const result = await Promise.all([
     source.balanceFor("u", "v"),
@@ -88,9 +94,11 @@ test("balance reads share grants, schedules, and approved requests across PTO ty
     source.usedFor("u", "v"),
   ]);
   assert.deepEqual(result, [10, 5, 10, 0]);
-  assert.equal(api.calls.filter((v) => v === "profiles").length, 1);
-  assert.equal(api.calls.filter((v) => v === "pto_grants").length, 1);
-  assert.equal(api.calls.filter((v) => v === "requests").length, 1);
+  assert.equal(
+    api.calls.filter((v) => Array.isArray(v) && v[0] === "leave_allowances")
+      .length,
+    1,
+  );
 });
 test("missing grant remains null, not an invented zero balance", async () => {
   assert.equal(
@@ -102,8 +110,8 @@ test("missing grant remains null, not an invented zero balance", async () => {
 });
 test("database failures reject instead of presenting zero usage", async () => {
   const source = createSupabaseDataSource(
-    client({ profiles: [{ id: "u", normal_days_off: [0, 6] }] }, (table) =>
-      table === "requests" ? { message: "Permission denied" } : null,
+    client({}, (name) =>
+      name === "leave_allowances" ? { message: "Permission denied" } : null,
     ),
   );
   await assert.rejects(source.usedFor("u", "v"), /permission/i);

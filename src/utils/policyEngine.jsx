@@ -1,3 +1,4 @@
+import { leaveYearLabel } from "./leaveYear.jsx";
 import { fmtShort } from "./dateHelpers.jsx";
 import { rangesOverlap } from "./dateHelpers.jsx";
 import { requestLines } from "./requestHelpers.jsx";
@@ -83,6 +84,9 @@ export function validateDraft({
   holidays = [],
   // HR booking for someone else may use any past date; every other rule still applies.
   allowPast = !1,
+  // The person's leave_allowances() rows. When given, each day is checked against the leave year it
+  // falls in (every type resets on its own day), instead of one balance per type.
+  allowances = null,
 }) {
   var N, _;
   const h = [],
@@ -202,15 +206,52 @@ export function validateDraft({
     N.type &&
     (k[f[0].type] = balance);
   const v = {};
-  Object.entries(y).forEach(([j, S]) => {
-    var R;
-    if (k[j] != null && ((v[j] = k[j] - S), S > k[j])) {
-      const T = `${((R = ptoTypes.find((C) => C.id === j)) == null ? void 0 : R.name) || "PTO"} balance is short. This needs ${S} day${S === 1 ? "" : "s"} but only ${k[j]} remain.`;
-      f.forEach((C, H) => {
-        C.type === j && g(H, T);
-      });
-    }
-  });
+  if (allowances) {
+    // A line crossing a reset day is split, so each part is charged to its own leave year.
+    const need = new Map();
+    f.forEach((line, idx) => {
+      if (!line.type || !line.start || !line.end || line.holidayId) return;
+      allowances
+        .filter(
+          (r) =>
+            r.typeId === line.type &&
+            r.startsOn <= line.end &&
+            r.endsOn >= line.start,
+        )
+        .forEach((r) => {
+          const part = lineDays(
+            {
+              ...line,
+              start: line.start > r.startsOn ? line.start : r.startsOn,
+              end: line.end < r.endsOn ? line.end : r.endsOn,
+            },
+            normalDaysOff,
+          );
+          const e = need.get(r) ?? { row: r, days: 0, lines: new Set() };
+          e.days += part;
+          e.lines.add(idx);
+          need.set(r, e);
+        });
+    });
+    need.forEach(({ row, days, lines }) => {
+      const kind = ptoTypes.find((C) => C.id === row.typeId),
+        running = row.startsOn <= todayIso && row.endsOn >= todayIso;
+      v[row.typeId] ??= row.balance - days;
+      if (days > row.balance) {
+        const T = `${(kind == null ? void 0 : kind.name) || "PTO"} balance is short${running ? "" : ` for ${leaveYearLabel(kind, row.leaveYear)}`}. This needs ${days} day${days === 1 ? "" : "s"} but only ${row.balance} remain.`;
+        lines.forEach((H) => g(H, T));
+      }
+    });
+  } else
+    Object.entries(y).forEach(([j, S]) => {
+      var R;
+      if (k[j] != null && ((v[j] = k[j] - S), S > k[j])) {
+        const T = `${((R = ptoTypes.find((C) => C.id === j)) == null ? void 0 : R.name) || "PTO"} balance is short. This needs ${S} day${S === 1 ? "" : "s"} but only ${k[j]} remain.`;
+        f.forEach((C, H) => {
+          C.type === j && g(H, T);
+        });
+      }
+    });
   const m = Object.values(y).reduce((j, S) => j + S, 0),
     x = (_ = f.find((j) => j.type)) == null ? void 0 : _.type,
     b = x ? (v[x] ?? null) : null;

@@ -1,3 +1,6 @@
+import { LeaveYearSettings } from "../components/settings/LeaveYearSettings.jsx";
+import { leaveYearLabel } from "../utils/leaveYear.jsx";
+import { RotateCcw as Vendor_RotateCcw } from "lucide-react";
 import { Plus as Vendor_Plus } from "lucide-react";
 import React from "react";
 import { Button } from "../components/ui/Button.jsx";
@@ -1443,21 +1446,31 @@ export function PeopleSettings() {
   React.useEffect(() => {
     let c = !0;
     async function v() {
-      const S = await getGrants();
+      // Allowances for each type's leave year running today, and the one after it.
+      const [S, next] = await Promise.all([getGrants(), getGrants("next")]);
       if (!c) return;
-      const $ = {};
-      a.people.forEach((M) => {
-        (($[M.id] = {}),
-          r.forEach((U) => {
-            var fe;
-            $[M.id][U.id] =
-              ((fe = S.find(
-                (ye) => ye.userId === M.id && ye.typeId === U.id,
-              )) == null
-                ? void 0
-                : fe.amount) ?? U.defaultDays;
-          }));
-      });
+      const byPerson = (rows) => {
+        const out = {};
+        a.people.forEach((M) => {
+          ((out[M.id] = {}),
+            r.forEach((U) => {
+              var fe;
+              out[M.id][U.id] =
+                ((fe = rows.find(
+                  (ye) => ye.userId === M.id && ye.typeId === U.id,
+                )) == null
+                  ? void 0
+                  : fe.amount) ?? U.defaultDays;
+            }));
+        });
+        return out;
+      };
+      const $ = byPerson(S),
+        nextGrants = byPerson(next),
+        // The leave year running today per type; the same for everyone.
+        typeYears = Object.fromEntries(
+          r.map((U) => [U.id, S.find((ye) => ye.typeId === U.id)?.leaveYear]),
+        );
       const P = {};
       a.people.forEach((M) => {
         P[M.id] = M.normalDaysOff ?? DEFAULT_NORMAL_DAYS_OFF;
@@ -1468,6 +1481,8 @@ export function PeopleSettings() {
       }),
         s({
           grants: $,
+          nextGrants: nextGrants,
+          typeYears: typeYears,
           normalDaysOff: P,
           active: I,
         }));
@@ -1511,29 +1526,35 @@ export function PeopleSettings() {
         b($);
       }
     },
-    B = async (c, v, S) => {
+    // which: "current" for the leave year running today, "next" for the one after it.
+    B = async (c, v, S, which = "current") => {
       var I;
-      const $ = Math.max(0, Number(S) || 0),
-        P = ((I = h.grants[c]) == null ? void 0 : I[v]) ?? 0;
+      const key = which === "next" ? "nextGrants" : "grants",
+        year =
+          h.typeYears[v] == null
+            ? void 0
+            : h.typeYears[v] + (which === "next" ? 1 : 0),
+        $ = Math.max(0, Number(S) || 0),
+        P = ((I = h[key][c]) == null ? void 0 : I[v]) ?? 0;
       s((M) => ({
         ...M,
-        grants: {
-          ...M.grants,
+        [key]: {
+          ...M[key],
           [c]: {
-            ...M.grants[c],
+            ...M[key][c],
             [v]: $,
           },
         },
       }));
       try {
-        await setGrant(c, v, $);
+        await setGrant(c, v, $, year);
       } catch (M) {
         (s((U) => ({
           ...U,
-          grants: {
-            ...U.grants,
+          [key]: {
+            ...U[key],
             [c]: {
-              ...U.grants[c],
+              ...U[key][c],
               [v]: P,
             },
           },
@@ -1777,6 +1798,8 @@ export function PeopleSettings() {
             canManageTeam={N}
             daysOff={h.normalDaysOff[C.id] || []}
             grants={h.grants[C.id] || {}}
+            nextGrants={h.nextGrants[C.id] || {}}
+            typeYears={h.typeYears}
             ptoTypes={r}
             active={h.active[C.id] !== !1}
             onSetOrgRole={(c) => w(C.id, c)}
@@ -1785,7 +1808,7 @@ export function PeopleSettings() {
             onRoleChange={(c, v) => H(C.id, c, v)}
             onToggleActive={() => F(C.id)}
             onToggleDay={(c) => R(C.id, c)}
-            onUpdateGrant={(c, v) => B(C.id, c, v)}
+            onUpdateGrant={(c, v, which) => B(C.id, c, v, which)}
             canResetPassword={g && C.id !== t.id}
             onResetPassword={() => qe(C.id)}
           />
@@ -1963,6 +1986,8 @@ export function PersonSettingsDrawer({
   canManageTeam: canManageTeam,
   daysOff: daysOff,
   grants: grants,
+  nextGrants: nextGrants,
+  typeYears = {},
   ptoTypes: ptoTypes,
   active: active,
   onSetOrgRole: onSetOrgRole,
@@ -1975,9 +2000,13 @@ export function PersonSettingsDrawer({
   canResetPassword: canResetPassword,
   onResetPassword: onResetPassword,
 }) {
+  // Allowances can be set for the leave year running today or the next one; each type's years
+  // follow its own reset day.
+  const [grantYear, setGrantYear] = React.useState("current"),
+    shown = grantYear === "next" ? nextGrants : grants;
   const A = new Set(daysOff),
     N = ptoTypes.reduce(
-      (R, F) => R + ((grants == null ? void 0 : grants[F.id]) ?? 0),
+      (R, F) => R + ((shown == null ? void 0 : shown[F.id]) ?? 0),
       0,
     ),
     D = person.orgRole === "god_admin",
@@ -2139,30 +2168,63 @@ export function PersonSettingsDrawer({
         </p>
       </section>
       <section>
-        <div className="mb-2.5 flex items-baseline justify-between">
+        <div className="mb-2.5 flex items-center justify-between gap-2">
           <h3 className="eyebrow">{"PTO grants"}</h3>
-          <span className="text-[11px] font-medium tabular text-ink-mute">
-            {N}
-            {" days / year"}
-          </span>
+          <div
+            role="group"
+            aria-label="Leave year"
+            className="inline-flex rounded-btn border border-line bg-panel p-0.5 text-xs font-semibold"
+          >
+            {[
+              ["current", "This year"],
+              ["next", "Next year"],
+            ].map(([id, text]) => (
+              <button
+                type="button"
+                aria-pressed={grantYear === id}
+                onClick={() => setGrantYear(id)}
+                className={`rounded-btn px-2.5 py-1 transition-colors ${grantYear === id ? "bg-card text-ink shadow-card" : "text-ink-mute hover:text-ink"}`}
+                key={id}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="space-y-1.5">
-          {ptoTypes.map((R) => (
-            <div
-              className="flex items-center gap-3 rounded-btn border border-line bg-card px-3 py-2"
-              key={R.id}
-            >
-              <PtoTypeIcon typeId={R.id} color={R.color} size={10} />
-              <span className="flex-1 truncate text-sm font-medium text-ink">
-                {R.name}
-              </span>
-              <GrantStepper
-                value={(grants == null ? void 0 : grants[R.id]) ?? 0}
-                onChange={(F) => onUpdateGrant(R.id, F)}
-              />
-            </div>
-          ))}
+          {ptoTypes.map((R) => {
+            const year =
+              typeYears[R.id] == null
+                ? null
+                : typeYears[R.id] + (grantYear === "next" ? 1 : 0);
+            return (
+              <div
+                className="flex items-center gap-3 rounded-btn border border-line bg-card px-3 py-2"
+                key={R.id}
+              >
+                <PtoTypeIcon typeId={R.id} color={R.color} size={10} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">
+                    {R.name}
+                  </span>
+                  {year != null && (
+                    <span className="block truncate text-[11px] text-ink-mute">
+                      {leaveYearLabel(R, year)}
+                    </span>
+                  )}
+                </span>
+                <GrantStepper
+                  value={(shown == null ? void 0 : shown[R.id]) ?? 0}
+                  onChange={(F) => onUpdateGrant(R.id, F, grantYear)}
+                />
+              </div>
+            );
+          })}
         </div>
+        <p className="mt-2 text-[11px] text-ink-mute">
+          {N}
+          {" days in all. Next year starts from this year’s amounts unless changed here."}
+        </p>
       </section>
     </div>
   );
@@ -2641,6 +2703,12 @@ export const settings_$t = [
     Comp: PtoTypesSettings,
   },
   {
+    id: "leave-years",
+    label: "Leave Years",
+    icon: Vendor_RotateCcw,
+    Comp: LeaveYearSettings,
+  },
+  {
     id: "holidays",
     label: "Holidays",
     icon: Vendor_CalendarHeart,
@@ -2731,7 +2799,7 @@ export function EditableSettings() {
             size={14}
             className="shrink-0 text-accent-ink"
           />
-          {"Leave balances reset on January 1."}
+          {"Each leave type resets on its own day of the year, set under Leave Years."}
         </p>
       </div>
     </div>
@@ -2902,7 +2970,7 @@ export function ReadOnlySettings() {
           </ul>
         </div>
         <p className="mt-6 rounded-btn bg-panel px-3 py-2 text-xs text-ink-mute">
-          {"Leave balances reset on January 1."}
+          {"Each leave type resets on its own day of the year, set under Leave Years."}
         </p>
       </section>
     </div>

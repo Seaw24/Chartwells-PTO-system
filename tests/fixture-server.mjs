@@ -422,6 +422,67 @@ http
           body.p_days;
         return send(body.p_days);
       }
+      if (method === "leave_allowances") {
+        // Mirrors the database for calendar leave years (the fixture types all reset Jan 1): last,
+        // this and next year per person and type, carrying the latest amount forward.
+        const weekdays = (from, to) => {
+          let n = 0;
+          for (let d = new Date(from + "T12:00:00"); iso(d) <= to; d.setDate(d.getDate() + 1))
+            d.getDay() % 6 && (n += 1);
+          return n;
+        };
+        const rows = [];
+        for (const user of users.filter((u) => !body.p_user_id || u.id === body.p_user_id))
+          for (const type of types.filter((t) => t.is_active && !t.is_holiday_day_off))
+            for (const y of [year - 1, year, year + 1]) {
+              const start = `${y}-01-01`,
+                end = `${y}-12-31`;
+              const grant = tables.pto_grants
+                .filter(
+                  (g) =>
+                    g.user_id === user.id &&
+                    g.pto_type_id === type.id &&
+                    g.leave_year <= y,
+                )
+                .sort((a, b) => b.leave_year - a.leave_year)[0];
+              const used = tables.requests
+                .filter((r) => r.requester_id === user.id && r.status === "approved")
+                .flatMap((r) => r.request_lines)
+                .filter(
+                  (l) =>
+                    l.pto_type_id === type.id &&
+                    l.start_date <= end &&
+                    l.end_date >= start,
+                )
+                .reduce(
+                  (sum, l) =>
+                    sum +
+                    weekdays(
+                      l.start_date > start ? l.start_date : start,
+                      l.end_date < end ? l.end_date : end,
+                    ),
+                  0,
+                );
+              rows.push({
+                user_id: user.id,
+                pto_type_id: type.id,
+                leave_year: y,
+                starts_on: start,
+                ends_on: end,
+                amount: grant ? grant.amount : type.default_days,
+                used,
+              });
+            }
+        return send(rows);
+      }
+      if (method === "set_leave_reset") {
+        Object.assign(types.find((t) => t.id === body.p_type_id), {
+          reset_month: body.p_month,
+          reset_day: body.p_day,
+          first_reset: body.p_first_reset,
+        });
+        return send(null);
+      }
       if (method === "set_pto_grant") {
         tables.pto_grants.find(
           (g) =>

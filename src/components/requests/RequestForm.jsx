@@ -31,6 +31,7 @@ import { holidayNote } from "../../utils/holidayDayOff.jsx";
 import { isGodAdmin } from "../../utils/constants.jsx";
 import { Stamp as Vendor_Stamp } from "lucide-react";
 import { BookForPicker } from "./BookForPicker.jsx";
+import { leaveYearLabel } from "../../utils/leaveYear.jsx";
 import { rememberBookedFor } from "./BookForPicker.jsx";
 export const normalizeDraftLine = (e = {}) => ({
   type: e.type || "",
@@ -59,8 +60,7 @@ export function RequestForm({
     {
       getRequests: getRequests,
       requestsForUser: requestsForUser,
-      balanceFor: balanceFor,
-      grantFor: grantFor,
+      leaveAllowances: leaveAllowances,
       normalDaysOffFor: normalDaysOffFor,
       submitRequest: submitRequest,
       bookRequestsFor: bookRequestsFor,
@@ -108,28 +108,27 @@ export function RequestForm({
   const { data: T = null } = useResource(
     ["request-form", s, balanceTypes.map((type) => type.id)],
     async () => {
-      const [requests, existingRequests, normalDaysOff, rows] =
+      const [requests, existingRequests, normalDaysOff, allowances] =
         await Promise.all([
           getRequests(),
           requestsForUser(s),
           normalDaysOffFor(s),
-          Promise.all(
-            balanceTypes.map(async (type) => ({
-              type: type.id,
-              balance: await balanceFor(s, type.id),
-              grant: await grantFor(s, type.id),
-            })),
-          ),
+          leaveAllowances(s),
         ]);
+      // Today's leave year per type; the line editor picks the year its dates fall in.
+      const today = allowances.filter(
+        (row) => row.startsOn <= i && row.endsOn >= i,
+      );
       return {
         requests,
         users,
         existingRequests,
         normalDaysOff,
+        allowances,
         balances: Object.fromEntries(
-          rows.map((row) => [row.type, row.balance]),
+          today.map((row) => [row.typeId, row.balance]),
         ),
-        grants: Object.fromEntries(rows.map((row) => [row.type, row.grant])),
+        grants: Object.fromEntries(today.map((row) => [row.typeId, row.amount])),
       };
     },
     true,
@@ -140,6 +139,7 @@ export function RequestForm({
     P = (T == null ? void 0 : T.balances) ?? {},
     $ = (T == null ? void 0 : T.grants) ?? {},
     U = (T == null ? void 0 : T.normalDaysOff) ?? [0, 6],
+    allowances = (T == null ? void 0 : T.allowances) ?? null,
     X = {
       lines: N,
     },
@@ -156,8 +156,9 @@ export function RequestForm({
           blackouts: blackouts,
           holidays: holidays,
           allowPast: booking,
+          allowances: allowances,
         }),
-      [N, P, U, i, Z, ptoTypes, dateRules, blackouts, holidays, booking],
+      [N, P, U, i, Z, ptoTypes, dateRules, blackouts, holidays, booking, allowances],
     ),
     he = N.every((Y) => Y.type && Y.start && Y.end),
     K = he && V.ok && !sending,
@@ -274,6 +275,7 @@ export function RequestForm({
     teamId: (person == null ? void 0 : person.team) ?? null,
     booking: booking,
     personFirst: personFirst,
+    allowances: allowances,
   };
   return (
     <form onSubmit={ye} className="space-y-5">
@@ -382,6 +384,11 @@ export function RequestForm({
     </form>
   );
 }
+// The allowance row for a type's leave year containing a day, from leave_allowances().
+const allowanceRowOn = (rows, typeId, dayIso) =>
+  (rows ?? []).find(
+    (r) => r.typeId === typeId && r.startsOn <= dayIso && r.endsOn >= dayIso,
+  ) ?? null;
 export function RequestLineEditor({
   line: line,
   index: index,
@@ -412,6 +419,7 @@ export function RequestLineEditor({
       teamId: teamId,
       booking: booking,
       personFirst: personFirst,
+      allowances: allowances,
     } = ctx,
     j = !!(line.start && line.end),
     S = j ? lineDays(line, normalDaysOff) : 0,
@@ -451,6 +459,7 @@ export function RequestLineEditor({
                 blackouts: blackouts,
                 holidays: holidays,
                 allowPast: booking,
+                allowances: allowances,
               }).lineResults.find((K) => K.index === index)) == null
                 ? void 0
                 : $.errors) ?? [];
@@ -486,6 +495,7 @@ export function RequestLineEditor({
       blackouts,
       holidays,
       booking,
+      allowances,
     ]),
     E = React.useMemo(
       () => bookedDaysByDate(existingRequests),
@@ -643,11 +653,20 @@ export function RequestLineEditor({
                   key={`holiday:${h.id}`}
                 />
               ))}
-              {balanceTypes.map((P) => (
+              {balanceTypes.map((P) => {
+                // The leave year the dates start in; named when it is not the one running today.
+                const row = allowanceRowOn(allowances, P.id, line.start || todayIso),
+                  ahead = row && !(row.startsOn <= todayIso && row.endsOn >= todayIso);
+                return (
                 <TypeOption
                   type={P}
-                  remaining={balances[P.id] ?? 0}
-                  total={grants[P.id] ?? P.defaultDays}
+                  caption={
+                    ahead
+                      ? `${leaveYearLabel(P, row.leaveYear)} allowance`
+                      : void 0
+                  }
+                  remaining={row ? row.balance : (balances[P.id] ?? 0)}
+                  total={row ? row.amount : (grants[P.id] ?? P.defaultDays)}
                   charged={S}
                   info={R[P.id]}
                   selected={line.type === P.id && !line.holidayId}
@@ -658,7 +677,8 @@ export function RequestLineEditor({
                   }
                   key={P.id}
                 />
-              ))}
+                );
+              })}
             </div>
             {T ? null : Z ? (
               <p className="mt-2 text-[11px] leading-snug text-ink-mute">

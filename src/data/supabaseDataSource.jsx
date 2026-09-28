@@ -7,7 +7,8 @@ import { REQUEST_SELECT } from "./mappers.jsx";
 import { PROFILE_SELECT } from "./mappers.jsx";
 import { mapProfile } from "./mappers.jsx";
 import { leaveYear } from "./mappers.jsx";
-import { lineDays } from "../utils/requestHelpers.jsx";
+import { mapAllowance } from "./mappers.jsx";
+import { localToday as todayIso } from "./today.jsx";
 import { belongsToTeam } from "../utils/constants.jsx";
 import { mapTeam } from "./mappers.jsx";
 import { mapPtoType } from "./mappers.jsx";
@@ -98,78 +99,34 @@ export function createSupabaseDataSource(clientOverride = null) {
         unwrap(await client.from("profiles").select(PROFILE_SELECT)) ?? [];
       return new Map(l.map((u) => [u.id, mapProfile(u)]));
     },
-    workingCalendar = (userId) =>
+    // Every allowance comes from leave_allowances(): last, this and next leave year for each type,
+    // with the amount (carried forward when no row was written for that year) and the days used.
+    // Each type has its own leave year, so rows are picked by the date asked about.
+    allowanceRows = (userId = null) =>
       queryClient.fetchQuery({
-        queryKey: ["data", "working-calendar", userId],
-        queryFn: async () => {
-          const profile = await client
-            .from("profiles")
-            .select("normal_days_off")
-            .eq("id", userId)
-            .single();
-          return {
-            normalDaysOff: unwrap(profile).normal_days_off ?? [0, 6],
-          };
-        },
-      }),
-    grantsForUser = (userId) =>
-      queryClient.fetchQuery({
-        queryKey: ["data", "grants-for-user", userId, leaveYear()],
-        queryFn: async () =>
-          unwrap(
-            await client
-              .from("pto_grants")
-              .select("pto_type_id,amount")
-              .eq("user_id", userId)
-              .eq("leave_year", leaveYear()),
-          ) ?? [],
-      }),
-    grantFor = async (userId, typeId) =>
-      (await grantsForUser(userId)).find((row) => row.pto_type_id === typeId)
-        ?.amount ?? null,
-    approvedForUser = (userId) =>
-      queryClient.fetchQuery({
-        queryKey: ["data", "approved-for-user", userId],
+        queryKey: ["data", "leave-allowances", userId ?? "all"],
         queryFn: async () =>
           (
             unwrap(
-              await client
-                .from("requests")
-                .select(REQUEST_SELECT)
-                .eq("requester_id", userId)
-                .eq("status", "approved"),
+              await client.rpc("leave_allowances", {
+                p_user_id: userId,
+              }),
             ) ?? []
-          ).map(mapRequest),
+          ).map(mapAllowance),
       }),
-    usedFor = async (userId, typeId) => {
-      const [calendar, requests] = await Promise.all([
-        workingCalendar(userId),
-        approvedForUser(userId),
-      ]);
-      const year = leaveYear();
-      return requests
-        .flatMap((request) => request.lines)
-        .filter(
-          (line) =>
-            line.type === typeId &&
-            line.end >= `${year}-01-01` &&
-            line.start <= `${year}-12-31`,
-        )
-        .reduce(
-          (total, line) =>
-            total +
-            lineDays(
-              {
-                ...line,
-                start:
-                  line.start < `${year}-01-01` ? `${year}-01-01` : line.start,
-                end: line.end > `${year}-12-31` ? `${year}-12-31` : line.end,
-              },
-              calendar.normalDaysOff,
-            ),
-          0,
-        );
-    };
+    allowanceOn = async (userId, typeId, onIso) => {
+      const day = onIso || todayIso();
+      return (
+        (await allowanceRows(userId)).find(
+          (row) =>
+            row.typeId === typeId && row.startsOn <= day && row.endsOn >= day,
+        ) ?? null
+      );
+    },
+    grantFor = async (userId, typeId, onIso) =>
+      (await allowanceOn(userId, typeId, onIso))?.amount ?? null,
+    usedFor = async (userId, typeId, onIso) =>
+      (await allowanceOn(userId, typeId, onIso))?.used ?? 0;
   return {
     getRequests: getRequests,
     requestsForUser: async (l) =>
@@ -261,9 +218,10 @@ export function createSupabaseDataSource(clientOverride = null) {
     },
     grantFor: grantFor,
     usedFor: usedFor,
-    balanceFor: async (l, u) => {
-      const [h, d] = await Promise.all([grantFor(l, u), usedFor(l, u)]);
-      return h == null ? null : h - d;
+    // onIso picks the leave year; today's when left out.
+    balanceFor: async (l, u, onIso) => {
+      const row = await allowanceOn(l, u, onIso);
+      return row == null ? null : row.balance;
     },
     normalDaysOffFor: async (l) => {
       const data = unwrap(
@@ -275,20 +233,24 @@ export function createSupabaseDataSource(clientOverride = null) {
       );
       return (data == null ? void 0 : data.normal_days_off) ?? [0, 6];
     },
-    getGrants: async () =>
-      (
-        unwrap(
-          await client
-            .from("pto_grants")
-            .select("user_id, pto_type_id, amount, leave_year")
-            .eq("leave_year", leaveYear()),
-        ) ?? []
-      ).map((l) => ({
-        userId: l.user_id,
-        typeId: l.pto_type_id,
-        amount: l.amount,
-        leaveYear: l.leave_year,
-      })),
+    // Each person's allowance per type for the leave year running today, or the next one.
+    getGrants: async (which = "current") => {
+      const day = todayIso();
+      const rows = await allowanceRows(null);
+      const current = rows.filter((r) => r.startsOn <= day && r.endsOn >= day);
+      if (which !== "next") return current;
+      return current
+        .map((c) =>
+          rows.find(
+            (r) =>
+              r.userId === c.userId &&
+              r.typeId === c.typeId &&
+              r.leaveYear === c.leaveYear + 1,
+          ),
+        )
+        .filter(Boolean);
+    },
+    leaveAllowances: (userId) => allowanceRows(userId),
     getUsers: async () =>
       (
         unwrap(
@@ -415,13 +377,24 @@ export function createSupabaseDataSource(clientOverride = null) {
       ),
       requestById(l)
     ),
-    setGrant: async (l, u, h) =>
+    // year: the leave year to set; the type's leave year running today when left out.
+    setGrant: async (l, u, h, year) =>
       unwrap(
         await client.rpc("set_pto_grant", {
           p_user_id: l,
           p_type_id: u,
-          p_leave_year: leaveYear(),
+          p_leave_year:
+            year ?? (await allowanceOn(l, u, todayIso()))?.leaveYear ?? leaveYear(),
           p_amount: h,
+        }),
+      ),
+    setLeaveReset: async (typeId, { month, day, firstReset }) =>
+      unwrap(
+        await client.rpc("set_leave_reset", {
+          p_type_id: typeId,
+          p_month: month,
+          p_day: day,
+          p_first_reset: firstReset,
         }),
       ),
     setNormalDaysOff: async (l, u) =>

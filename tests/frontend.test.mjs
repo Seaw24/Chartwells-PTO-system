@@ -698,3 +698,75 @@ test("an HR booking goes to book_requests_for with the person and the same item 
     },
   ]);
 });
+test("leave years follow each type's reset day, and Vacation keeps calendar years until Oct 1, 2027", async () => {
+  const ly = await server.ssrLoadModule("/src/utils/leaveYear.jsx");
+  const vac = { resetMonth: 10, resetDay: 1, firstReset: "2027-10-01" };
+  assert.equal(ly.leaveYearFor(vac, "2026-09-28"), 2026);
+  assert.equal(ly.leaveYearFor(vac, "2027-09-30"), 2026);
+  assert.equal(ly.leaveYearFor(vac, "2027-10-01"), 2027);
+  assert.equal(ly.leaveYearFor(vac, "2025-12-31"), 2025);
+  assert.equal(ly.leaveYearStart(vac, 2026), "2026-01-01");
+  assert.equal(ly.leaveYearEnd(vac, 2026), "2027-09-30");
+  assert.equal(ly.leaveYearLabel(vac, 2027), "Oct 1, 2027 – Sep 30, 2028");
+  assert.equal(ly.nextReset(vac, "2026-09-28"), "2027-10-01");
+  const sick = { resetMonth: 1, resetDay: 1, firstReset: null };
+  assert.equal(ly.leaveYearLabel(sick, 2027), "2027");
+  assert.equal(ly.nextReset(sick, "2026-09-28"), "2027-01-01");
+  // A rule already in effect with no transition.
+  const july = { resetMonth: 7, resetDay: 1, firstReset: null };
+  assert.equal(ly.leaveYearFor(july, "2027-06-30"), 2026);
+  assert.equal(ly.leaveYearFor(july, "2027-07-01"), 2027);
+  assert.equal(ly.nextOccurrence(10, 1, "2026-09-28"), "2026-10-01");
+  assert.equal(ly.nextOccurrence(10, 1, "2026-10-01"), "2027-10-01");
+});
+test("a line crossing a reset day is checked against each leave year it touches", () => {
+  const type = { id: "vac", name: "Vacation", resetMonth: 10, resetDay: 1, firstReset: null };
+  const allowances = [
+    { typeId: "vac", leaveYear: 2026, startsOn: "2026-10-01", endsOn: "2027-09-30", amount: 10, used: 9, balance: 1 },
+    { typeId: "vac", leaveYear: 2027, startsOn: "2027-10-01", endsOn: "2028-09-30", amount: 10, used: 0, balance: 10 },
+  ];
+  const check = (start, end) =>
+    policy.validateDraft({
+      draft: { lines: [{ type: "vac", start, end }] },
+      todayIso: "2026-11-02",
+      ptoTypes: [type],
+      allowances,
+    });
+  // Wed Sep 29 + Thu Sep 30 come out of 2026 (1 left); Fri Oct 1 + Mon Oct 4 out of 2027.
+  const crossing = check("2027-09-29", "2027-10-04");
+  assert.equal(crossing.ok, false);
+  assert.match(
+    crossing.lineResults[0].errors.join(" "),
+    /Vacation balance is short\. This needs 2 days but only 1 remain/,
+  );
+  // Booking ahead is checked against next year's allowance, and says so when short.
+  assert.equal(check("2027-10-01", "2027-10-04").ok, true);
+  const ahead = check("2027-10-01", "2027-10-29");
+  assert.match(
+    ahead.lineResults[0].errors.join(" "),
+    /Vacation balance is short for Oct 1, 2027 – Sep 30, 2028/,
+  );
+});
+test("allowance reads pick the leave year of the date asked about", async () => {
+  const { createSupabaseDataSource } = await server.ssrLoadModule(
+    "/src/data/supabaseDataSource.jsx",
+  );
+  const rows = [
+    { user_id: "u", pto_type_id: "vac", leave_year: 2026, starts_on: "2026-01-01", ends_on: "2027-09-30", amount: 12, used: 2 },
+    { user_id: "u", pto_type_id: "vac", leave_year: 2027, starts_on: "2027-10-01", ends_on: "2028-09-30", amount: 12, used: 0 },
+  ];
+  const calls = [];
+  const client = {
+    rpc: async (name, args) => (calls.push({ name, args }), { data: rows, error: null }),
+  };
+  const source = createSupabaseDataSource(client);
+  assert.equal(await source.balanceFor("u", "vac", "2027-09-30"), 10);
+  assert.equal(await source.balanceFor("u", "vac", "2027-10-01"), 12);
+  assert.equal(await source.grantFor("u", "vac", "2027-10-02"), 12);
+  assert.equal(calls[0].name, "leave_allowances");
+  await source.setGrant("u", "vac", 15, 2027);
+  assert.deepEqual(calls.at(-1), {
+    name: "set_pto_grant",
+    args: { p_user_id: "u", p_type_id: "vac", p_leave_year: 2027, p_amount: 15 },
+  });
+});
