@@ -54,6 +54,9 @@ try {
   await db.exec(
     fs.readFileSync("supabase/migrations/202609180005_undo_denial.sql", "utf8"),
   );
+  await db.exec(
+    fs.readFileSync("supabase/migrations/202609280001_hr_booking.sql", "utf8"),
+  );
 } catch (error) {
   console.error(error.message, error.position);
   process.exit(1);
@@ -751,5 +754,219 @@ test("a denied wellness grant has no window to miss", async () => {
     (await as(fLead, "select status from requests where id=$1", [id])).rows[0]
       .status,
     "pending",
+  );
+});
+
+// HR booking on someone's behalf. Its own cast: an HR user, an employee with a manager, a new
+// hire who has never signed in and has no team, and an inactive account.
+const hHr = "00000000-0000-0000-0000-0000000000b1",
+  hEmp = "00000000-0000-0000-0000-0000000000b2",
+  hLead = "00000000-0000-0000-0000-0000000000b3",
+  hNew = "00000000-0000-0000-0000-0000000000b4",
+  hGone = "00000000-0000-0000-0000-0000000000b5",
+  hTeam = "00000000-0000-0000-0000-0000000000b6";
+const hFuture = [],
+  hPast = [];
+const book = (who, items) =>
+  as(hHr, "select book_requests_for($1,$2::jsonb) ids", [
+    who,
+    JSON.stringify(items),
+  ]);
+test("HR booking: setup", async () => {
+  await db.exec(
+    `reset role;insert into auth.users values('${hHr}'),('${hEmp}'),('${hLead}'),('${hNew}'),('${hGone}');
+     insert into profiles(id,name,email,org_role,password_setup_required,is_active) values
+       ('${hHr}','Dana Hr','dana@example.test','god_admin',false,true),
+       ('${hEmp}','Hana Emp','hana@example.test','member',false,true),
+       ('${hLead}','Lee Lead','lee@example.test','member',false,true),
+       ('${hNew}','Nia New','nia@example.test','member',true,true),
+       ('${hGone}','Gil Gone','gil@example.test','member',false,false);
+     insert into teams(id,name) values('${hTeam}','HR Booking Crew');
+     insert into team_memberships(team_id,user_id) values('${hTeam}','${hEmp}');
+     insert into team_memberships(team_id,user_id,role) values('${hTeam}','${hLead}','admin');
+     insert into pto_grants
+       select p, '${type}', y, 5
+       from unnest(array['${hEmp}','${hNew}','${hGone}']::uuid[]) p,
+            generate_series(extract(year from current_date)::integer-1, extract(year from current_date)::integer+1) y
+     on conflict do nothing;`,
+  );
+  hFuture.push(
+    ...(
+      await asOwner(
+        "select d::date::text as day from generate_series(current_date+30,current_date+45,interval '1 day') d where extract(dow from d) between 1 and 5 order by d limit 3",
+      )
+    ).rows.map((r) => r.day),
+  );
+  hPast.push(
+    ...(
+      await asOwner(
+        "select d::date::text as day from generate_series(current_date-12,current_date-2,interval '1 day') d where extract(dow from d) between 1 and 5 order by d limit 2",
+      )
+    ).rows.map((r) => r.day),
+  );
+});
+test("only HR can book for someone else, never for themselves or an inactive account", async () => {
+  const item = [{ type_id: type, start: hFuture[0], end: hFuture[0] }];
+  await assert.rejects(
+    as(hLead, "select book_requests_for($1,$2::jsonb)", [
+      hEmp,
+      JSON.stringify(item),
+    ]),
+    /Only HR can book/,
+  );
+  await assert.rejects(
+    as(hEmp, "select book_requests_for($1,$2::jsonb)", [
+      hLead,
+      JSON.stringify(item),
+    ]),
+    /Only HR can book/,
+  );
+  await assert.rejects(book(hHr, item), /normal request for your own/);
+  await assert.rejects(book(hGone, item), /not active/);
+});
+let hBooked;
+test("an HR booking is approved at once with HR in both slots", async () => {
+  hBooked = (
+    await book(hEmp, [
+      { type_id: type, start: hFuture[0], end: hFuture[0], note: "Called in" },
+    ])
+  ).rows[0].ids[0];
+  const row = (
+    await as(
+      hEmp,
+      "select status,note,god_stamp_by,team_stamp_by,team_stamp_override,decided_by from requests where id=$1",
+      [hBooked],
+    )
+  ).rows[0];
+  assert.deepEqual(row, {
+    status: "approved",
+    note: "Called in",
+    god_stamp_by: hHr,
+    team_stamp_by: hHr,
+    team_stamp_override: true,
+    decided_by: hHr,
+  });
+});
+test("HR may book past dates; the employee still may not", async () => {
+  await assert.rejects(
+    as(hEmp, "select submit_requests($1::jsonb)", [
+      JSON.stringify([{ type_id: type, start: hPast[0], end: hPast[0] }]),
+    ]),
+    /in the past/,
+  );
+  const id = (
+    await book(hEmp, [{ type_id: type, start: hPast[0], end: hPast[0] }])
+  ).rows[0].ids[0];
+  assert.equal(
+    (await as(hEmp, "select status from requests where id=$1", [id])).rows[0]
+      .status,
+    "approved",
+  );
+});
+test("every other rule still applies, and errors name the person", async () => {
+  await assert.rejects(
+    book(hEmp, [{ type_id: type, start: hFuture[0], end: hFuture[0] }]),
+    /Hana already has a request that overlaps/,
+  );
+  await assert.rejects(
+    book(hEmp, [
+      { type_id: type, start: hFuture[1], end: hFuture[1] },
+      { type_id: type, start: hFuture[0], end: hFuture[0] },
+    ]),
+    /Time off 2: Hana already has/,
+  );
+  // Nothing from a refused booking is kept.
+  assert.equal(
+    Number(
+      (
+        await as(
+          hHr,
+          "select count(*) n from requests r join request_lines l on l.request_id=r.id where r.requester_id=$1 and l.start_date=$2",
+          [hEmp, hFuture[1]],
+        )
+      ).rows[0].n,
+    ),
+    0,
+  );
+  await asOwner(
+    `update pto_grants set amount=0 where user_id='${hEmp}' and pto_type_id='${type}'`,
+  );
+  await assert.rejects(
+    book(hEmp, [{ type_id: type, start: hFuture[2], end: hFuture[2] }]),
+    /balance is short for Hana/,
+  );
+  await asOwner(
+    `update pto_grants set amount=5 where user_id='${hEmp}' and pto_type_id='${type}'`,
+  );
+});
+test("HR can book a Holiday Day Off for someone who has never signed in", async () => {
+  const holiday = (
+    await asOwner(
+      "insert into holidays(date,name) values(current_date-5,'Staff Day') returning id",
+    )
+  ).rows[0].id;
+  const day = (
+    await asOwner(
+      "select d::date::text as day from generate_series(current_date+1,current_date+24,interval '1 day') d where extract(dow from d) between 1 and 5 order by d desc limit 1",
+    )
+  ).rows[0].day;
+  await assert.rejects(
+    as(hNew, "select submit_holiday_day_off($1,$2,$2,null)", [holiday, day]),
+    /Finish account setup/,
+  );
+  const id = (await book(hNew, [{ holiday_id: holiday, start: day, end: day }]))
+    .rows[0].ids[0];
+  // No manager, so the Manager slot is an X and HR's stamp alone grants it.
+  assert.deepEqual(
+    (
+      await as(
+        hHr,
+        "select status,team_stamp_by,team_stamp_na,god_stamp_by from requests where id=$1",
+        [id],
+      )
+    ).rows[0],
+    { status: "approved", team_stamp_by: null, team_stamp_na: true, god_stamp_by: hHr },
+  );
+});
+test("the booked-by-HR marker is visible to HR only", async () => {
+  const facts = (who) =>
+    as(who, "select booked_by_name from request_stamp_facts($1)", [hBooked]);
+  assert.equal((await facts(hHr)).rows[0].booked_by_name, "Dana Hr");
+  assert.equal((await facts(hEmp)).rows[0].booked_by_name, null);
+  assert.equal((await facts(hLead)).rows[0].booked_by_name, null);
+  await assert.rejects(
+    as(hEmp, "select * from hr_bookings"),
+    /permission denied/,
+  );
+  await assert.rejects(
+    as(hHr, "select * from hr_bookings"),
+    /permission denied/,
+  );
+});
+test("the internal file-as-someone functions are not callable from the browser", async () => {
+  await assert.rejects(
+    as(hHr, "select submit_request_as($1,null,$2::jsonb,$3)", [
+      hEmp,
+      JSON.stringify([{ type_id: type, start: hFuture[2], end: hFuture[2] }]),
+      hHr,
+    ]),
+    /permission denied/,
+  );
+  await assert.rejects(
+    as(hEmp, "select submit_requests_as($1,$2::jsonb,$3)", [
+      hEmp,
+      JSON.stringify([{ type_id: type, start: hPast[1], end: hPast[1] }]),
+      hHr,
+    ]),
+    /permission denied/,
+  );
+  await assert.rejects(
+    as(hEmp, "select submit_holiday_day_off_as($1,$2,$3,$3,null,$4)", [
+      hEmp,
+      holidayId,
+      hFuture[2],
+      hHr,
+    ]),
+    /permission denied/,
   );
 });

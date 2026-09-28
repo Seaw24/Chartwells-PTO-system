@@ -654,7 +654,8 @@ export function EmployeeProfile({
             <PersonSkeleton full={E} />
           ) : (
             <div className="space-y-6">
-              {T && (
+              {/* Only HR books time off for someone else, and it is approved on the spot. */}
+              {T && isGodAdmin(viewer == null ? void 0 : viewer.role) && (
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
@@ -664,20 +665,18 @@ export function EmployeeProfile({
                     }
                   >
                     <Vendor_CalendarPlus size={15} />
-                    {" Add time off"}
+                    {" Book time off"}
                   </Button>
-                  {isGodAdmin(viewer == null ? void 0 : viewer.role) && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        onEditConfig == null ? void 0 : onEditConfig(g)
-                      }
-                    >
-                      <Vendor_SlidersHorizontal size={15} />
-                      {" Edit config"}
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      onEditConfig == null ? void 0 : onEditConfig(g)
+                    }
+                  >
+                    <Vendor_SlidersHorizontal size={15} />
+                    {" Edit config"}
+                  </Button>
                 </div>
               )}
               {E ? (
@@ -782,7 +781,7 @@ export function PrivateLeaveNotice() {
       <Vendor_Lock size={15} className="mt-0.5 shrink-0 text-ink-mute" />
       <p className="text-[12px] leading-snug text-ink-soft">
         {
-          "You’re viewing limited details. Balances and request reasons are visible to this person’s team admins."
+          "You’re viewing limited details. Balances and request reasons are visible to this person’s managers."
         }
       </p>
     </div>

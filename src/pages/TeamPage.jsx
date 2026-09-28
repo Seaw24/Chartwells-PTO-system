@@ -395,11 +395,11 @@ export function TeamPage() {
             end: E,
           })
         }
-        onStartOnBehalf={() => {
-          y("Adding time off on behalf of someone isn’t available yet.", {
-            kind: "info",
-          });
-        }}
+        onStartOnBehalf={(person) =>
+          openRequest({
+            forUserId: person.id,
+          })
+        }
         onEditConfig={() => p("/settings")}
         onOpenRequest={_}
         onSaveNormalDaysOff={R}

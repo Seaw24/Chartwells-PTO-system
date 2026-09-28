@@ -118,7 +118,10 @@ export function TimeOffRequestCard({ request: request, onCancel: onCancel }) {
             {d === 1 ? "" : "s"}
           </span>
           <span>
-            {"Submitted "}
+            {/* Only HR ever receives bookedByName; everyone else sees a normal submission. */}
+            {request.bookedByName
+              ? `Booked by ${firstName(request.bookedByName)} (HR) `
+              : "Submitted "}
             {timeAgo(request.submittedAt, o)}
           </span>
           {f && request.decidedAt && (

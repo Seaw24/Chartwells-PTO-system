@@ -15,6 +15,19 @@ import { mapHoliday } from "./mappers.jsx";
 import { mapBlackout } from "./mappers.jsx";
 import { mapDateRule } from "./mappers.jsx";
 import { friendlyError } from "../utils/errors.jsx";
+// Each time off in the form becomes its own request with its own note; the database saves them
+// together or not at all. A Holiday Day Off is routed by its holiday id.
+const requestItems = (draft) =>
+  draft.lines.map((d) => {
+    var h;
+    return {
+      type_id: d.type,
+      start: d.start,
+      end: d.end,
+      holiday_id: d.holidayId || null,
+      note: ((h = d.note ?? draft.note) == null ? void 0 : h.trim()) || null,
+    };
+  });
 export function createSupabaseDataSource(clientOverride = null) {
   const client = clientOverride ?? getSupabaseClient(),
     currentUserId = async () => {
@@ -351,22 +364,21 @@ export function createSupabaseDataSource(clientOverride = null) {
     unreadCount: async () => 0,
     markNotificationRead: async () => null,
     markAllRead: async () => {},
-    // Each time off in the form becomes its own request with its own note; the database saves them
-    // together or not at all. A Holiday Day Off is routed by its holiday id.
     submitRequest: async (l) => {
       const ids = unwrap(
         await client.rpc("submit_requests", {
-          p_requests: l.lines.map((d) => {
-            var h;
-            return {
-              type_id: d.type,
-              start: d.start,
-              end: d.end,
-              holiday_id: d.holidayId || null,
-              note:
-                ((h = d.note ?? l.note) == null ? void 0 : h.trim()) || null,
-            };
-          }),
+          p_requests: requestItems(l),
+        }),
+      );
+      return Promise.all((ids ?? []).map(requestById));
+    },
+    // HR books time off for someone else. The database approves it before returning, with HR's
+    // stamp in each slot, and allows past dates. Only HR may call it.
+    bookRequestsFor: async (personId, l) => {
+      const ids = unwrap(
+        await client.rpc("book_requests_for", {
+          p_requester: personId,
+          p_requests: requestItems(l),
         }),
       );
       return Promise.all((ids ?? []).map(requestById));

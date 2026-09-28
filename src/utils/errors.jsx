@@ -4,7 +4,20 @@ export const errorMessage = (e) =>
     : typeof (e == null ? void 0 : e.message) == "string"
       ? e.message.trim()
       : "";
+// The database still words its errors with the stored role names ("Only a god admin ..."). Users
+// know those roles as HR and Manager, so any message shown as-is is reworded on the way out.
+const withDisplayRoleNames = (e) =>
+  e
+    .replace(/\b(an?|the) god admins?\b/gi, "HR")
+    .replace(/\bgod admins?\b/gi, "HR")
+    .replace(/\b(a|an) team admin\b/gi, (m, a) => (a[0] === "A" ? "A manager" : "a manager"))
+    .replace(/\bteam admin(s?)\b/gi, (m, s) =>
+      (m[0] === "T" ? "Manager" : "manager") + s,
+    );
 export function friendlyError(e, t = "That did not work. Try again.") {
+  return withDisplayRoleNames(friendlyErrorText(e, t));
+}
+function friendlyErrorText(e, t) {
   const n = errorMessage(e);
   if (!n) return t;
   const r = n.toLowerCase();

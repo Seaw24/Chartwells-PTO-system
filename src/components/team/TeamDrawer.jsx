@@ -52,7 +52,7 @@ export function TeamDrawer({
       title={(o == null ? void 0 : o.name) || "Team"}
       subtitle={
         o
-          ? `${c.length} ${c.length === 1 ? "member" : "members"}${l ? ` · ${l} admin${l === 1 ? "" : "s"}` : ""}`
+          ? `${c.length} ${c.length === 1 ? "member" : "members"}${l ? ` · ${l} manager${l === 1 ? "" : "s"}` : ""}`
           : ""
       }
       icon={

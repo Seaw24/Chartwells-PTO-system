@@ -307,7 +307,7 @@ export function TeamEditor({
                         <>
                           {" · "}
                           <span className="tabular">{ye.length}</span>
-                          {" admin"}
+                          {" manager"}
                           {ye.length === 1 ? "" : "s"}
                         </>
                       )}
@@ -684,7 +684,7 @@ export function InlineTeamInput({ value: value, onChange: onChange }) {
   return (
     <div className="inline-flex shrink-0 items-center rounded-btn border border-line bg-panel p-0.5">
       {n("employee", "Member")}
-      {n("admin", "Admin")}
+      {n("admin", "Manager")}
     </div>
   );
 }
@@ -710,7 +710,7 @@ export function TeamRoleBadge({
   className = "",
 }) {
   const { team: team, role: role, oversight: oversight } = affiliation,
-    l = oversight ? "Oversight" : role === "admin" ? "Admin" : null,
+    l = oversight ? "Oversight" : role === "admin" ? "Manager" : null,
     u = onDark
       ? "border-white/15 bg-white/10 text-navy-fg"
       : "border-line bg-card text-ink",
@@ -896,7 +896,7 @@ export function UserTeamCard({
         {"Not on a team yet"}
       </p>
       <p className="mt-0.5 text-xs text-ink-mute">
-        {"An admin can add you to a team in Settings."}
+        {"HR or a manager can add you to a team in Settings."}
       </p>
     </div>
   ) : (
@@ -934,7 +934,7 @@ export function UserTeamCard({
                   <>
                     {" · "}
                     <span className="tabular">{c}</span>
-                    {" admin"}
+                    {" manager"}
                     {c === 1 ? "" : "s"}
                   </>
                 )}

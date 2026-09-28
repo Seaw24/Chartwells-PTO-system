@@ -1118,7 +1118,7 @@ export function TeamSettings({
     [u, l] = React.useState(null),
     h = (b) => p || r.isTeamAdmin(a.id, b),
     s = p ? r.teams : r.teams.filter((b) => r.isTeamAdmin(a.id, b.id)),
-    // God Admins see and manage everything, so they are never assigned to a team - including
+    // HR sees and manages everything, so they are never assigned to a team - including
     // yourself. add_team_memberships rejects them, so never offer one in the picker.
     d = r.people.filter((b) => b.orgRole !== "god_admin");
   React.useEffect(() => {
@@ -1183,7 +1183,7 @@ export function TeamSettings({
           await r.setMembershipRole(b, w, T);
           const B = r.personById(w);
           n(
-            `${(B == null ? void 0 : B.name) || "Person"} is now ${T === "admin" ? "an Admin" : "an Employee"} of ${((H = r.teamById(b)) == null ? void 0 : H.name) || "the team"}.`,
+            `${(B == null ? void 0 : B.name) || "Person"} is now ${T === "admin" ? "a Manager" : "an Employee"} of ${((H = r.teamById(b)) == null ? void 0 : H.name) || "the team"}.`,
           );
         } catch (B) {
           f(B);
@@ -1219,8 +1219,8 @@ export function TeamSettings({
           title="Teams"
           desc={
             p
-              ? "Groups that admins manage. Each request routes to its team's admins."
-              : "The teams you administer. Manage who is on them and their role."
+              ? "Groups that managers run. Each request routes to its team's managers."
+              : "The teams you manage. Choose who is on them and their role."
           }
         />
         {p && (
@@ -1242,8 +1242,8 @@ export function TeamSettings({
       {s.length === 0 ? (
         <p className="rounded-card border border-dashed border-line px-4 py-10 text-center text-sm text-ink-mute">
           {p
-            ? "No teams yet. Create one to route requests to its admins."
-            : "You are not an admin of any team yet."}
+            ? "No teams yet. Create one to route requests to its managers."
+            : "You are not a manager of any team yet."}
         </p>
       ) : (
         <div className="grid items-start gap-3 sm:grid-cols-2">
@@ -1276,7 +1276,7 @@ export function TeamSettings({
                       <>
                         {" · "}
                         <span className="tabular">{T.length}</span>
-                        {" admin"}
+                        {" manager"}
                         {T.length === 1 ? "" : "s"}
                       </>
                     )}
@@ -1893,7 +1893,7 @@ export function PersonTeamTags({ teams: teams, isGod: isGod }) {
                 : "text-ink-mute"
             }
           >
-            {role === "admin" ? "Admin" : "Member"}
+            {role === "admin" ? "Manager" : "Member"}
           </span>
         </span>
       ))}
@@ -2005,21 +2005,21 @@ export function PersonSettingsDrawer({
                 onChange={(R) => onSetOrgRole(R.target.value)}
               >
                 <option value="member">{"Member (belongs to teams)"}</option>
-                <option value="god_admin">{"God Admin (all teams)"}</option>
+                <option value="god_admin">{"HR (all teams)"}</option>
               </SettingsSelect>
             </SettingsField>
           ) : (
             D && (
               <div className="flex items-center gap-2 text-sm font-medium text-ink">
                 <Vendor_ShieldCheck size={15} className="text-accent-ink" />
-                {" God Admin"}
+                {" HR"}
               </div>
             )
           )}
           {D ? (
             <p className="rounded-btn border border-dashed border-line px-3 py-2.5 text-[12px] text-ink-mute">
               {
-                "Over all teams. God Admins see and manage everything, so they aren’t assigned to individual teams."
+                "Over all teams. HR sees and manages everything, so HR people aren’t assigned to individual teams."
               }
             </p>
           ) : (
@@ -2352,7 +2352,7 @@ export function NewEmployeeForm({
       </SettingsField>
       {god && (
         <LabeledToggle
-          label="God Admin"
+          label="HR"
           hint="Over all teams. Skips team assignment."
           checked={h}
           onChange={s}
@@ -2460,7 +2460,7 @@ export function settings_Dt() {
         </label>
         <p className="text-xs text-ink-mute">
           {
-            "Warn admins when more than this share of a team is off the same day."
+            "Warn managers when more than this share of a team is off the same day."
           }
         </p>
         <div className="mt-3 flex items-center gap-4">

@@ -17,7 +17,7 @@ import { stampBlockedReason } from "../../utils/requestHelpers.jsx";
 import { SLOT_LABEL } from "../../utils/requestHelpers.jsx";
 import { Zap as Vendor_Zap } from "lucide-react";
 
-const SLOT_RING_LABEL = { team: "TEAM ADMIN", god: "GOD ADMIN" };
+const SLOT_RING_LABEL = { team: "MANAGER", god: "HR" };
 // Who pressed a stamp. request_stamp_facts() puts the name on the row precisely because the roster
 // a viewer may read does not always contain them — an employee's roster is themselves alone — so
 // the row wins and the catalog is only a fallback for rows fetched before the migration landed.
@@ -39,12 +39,12 @@ export function slotSummary(slot, state, userById) {
       return `${who} denied this ${fmtDateTime(state.at)}`;
     case "na":
       return slot === "team"
-        ? "No team admin can approve this one"
-        : "No other god admin can approve this one";
+        ? "No manager can approve this one"
+        : "No one else in HR can approve this one";
     default:
       return slot === "team"
-        ? "Waiting on a team admin"
-        : "Waiting on a god admin";
+        ? "Waiting on a manager"
+        : "Waiting on HR";
   }
 }
 
@@ -313,12 +313,12 @@ function sealDeed(slot, state, userById) {
       return `Denied ${fmtDateTime(state.at)}`;
     case "na":
       return slot === "team"
-        ? "No team admin can approve this one"
-        : "No other god admin can approve this one";
+        ? "No manager can approve this one"
+        : "No one else in HR can approve this one";
     default:
       return slot === "team"
-        ? "Waiting on a team admin"
-        : "Waiting on a god admin";
+        ? "Waiting on a manager"
+        : "Waiting on HR";
   }
 }
 // The hover card: who pressed the seal, in what capacity, and when. Identical for every viewer —
@@ -328,7 +328,7 @@ function SealHover({ slot, state, name, role, userById, hint }) {
   return (
     <div>
       <p className="font-semibold text-navy-fg">
-        {name ?? (slot === "team" ? "Team admin stamp" : "God admin stamp")}
+        {name ?? (slot === "team" ? "Manager stamp" : "HR stamp")}
       </p>
       {roleLabel && <p className="text-navy-fg-mute">{roleLabel}</p>}
       <p className="mt-1 text-navy-fg-mute">
@@ -340,7 +340,7 @@ function SealHover({ slot, state, name, role, userById, hint }) {
 }
 
 // The two stamp holders. A click presses or lifts a seal straight away; the only dialog left is a
-// god admin reaching into a stamp somebody else pressed, which that person cannot undo alone.
+// HR reaching into a stamp somebody else pressed, which that person cannot undo alone.
 export function StampSlots({ request, size = "md", className = "" }) {
   const me = useCurrentUser(),
     { users: users, userById: userById } = useCatalog(),
@@ -367,7 +367,7 @@ export function StampSlots({ request, size = "md", className = "" }) {
         (await stampRequest(request.id, slot, override),
           toast(
             override
-              ? "Stamped in the team admin's place."
+              ? "Stamped in the manager's place."
               : `Stamped ${firstName(requester?.name) || "this"}'s request.`,
             { kind: "success" },
           ));
@@ -395,7 +395,7 @@ export function StampSlots({ request, size = "md", className = "" }) {
       slot: slot,
       action: action,
       denied: state.state === "denied",
-      who: stamperName(state, userById) ?? "Another admin",
+      who: stamperName(state, userById) ?? "Another approver",
       at: state.at,
     });
   };

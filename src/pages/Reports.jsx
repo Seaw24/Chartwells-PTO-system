@@ -562,11 +562,11 @@ export function ReportsPage() {
         "Business Days",
         "Status",
         "Decided By",
-        "Team Stamp",
-        "Team Stamped At",
+        "Manager Stamp",
+        "Manager Stamped At",
         "Override",
-        "God Stamp",
-        "God Stamped At",
+        "HR Stamp",
+        "HR Stamped At",
       ],
       T = O.map((D) => {
         var R, z, U, q, F;

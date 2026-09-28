@@ -125,7 +125,7 @@ export function requestTypeLabel(e, t = []) {
 }
 // --- Two-stamp approval -----------------------------------------------------
 // The two slots, named. Lives here so the copy for a blocked click reads the same as the seal.
-export const SLOT_LABEL = { team: "TEAM", god: "GOD" };
+export const SLOT_LABEL = { team: "MANAGER", god: "HR" };
 // Every request carries a TEAM slot and a GOD slot and is granted once both settle. A slot nobody
 // can fill is an X: while a request is pending that is recomputed from the current roster, and the
 // database freezes it onto the row once the request is decided.
@@ -265,7 +265,7 @@ export function stampBlockedReason(e, t, n, r = []) {
     a = firstName(o?.name) || "this person",
     d =
       firstName(t.decidedByName ?? r.find((c) => c.id === t.decidedBy)?.name) ||
-      "the admin who denied it";
+      "the person who denied it";
   if (!e) return "Sign in to approve requests.";
   if (e.id === t.userId) return "You can't stamp your own request.";
   // The seal that denied it can be lifted; anything else on a denied request cannot.
@@ -274,7 +274,7 @@ export function stampBlockedReason(e, t, n, r = []) {
       ? "This request was denied, so this slot never settled."
       : t.decidedBy === e.id
         ? "The time off has already started, so this denial can't be taken back."
-        : `Only ${d} or a God Admin can take this denial back.`;
+        : `Only ${d} or HR can take this denial back.`;
   if (!["pending", "approved"].includes(t.status))
     return `This request was ${t.status} — its stamps are final.`;
   if (slotState(t, n, r).state === "na")
@@ -282,11 +282,11 @@ export function stampBlockedReason(e, t, n, r = []) {
   if (i.by)
     return i.by === e.id
       ? "The time off has already started, so this stamp can't be taken off."
-      : `Only a God Admin can take somebody else's ${s} stamp off.`;
-  if (n === "god") return `Only a God Admin can fill the ${s} slot.`;
+      : `Only HR can take somebody else's ${s} stamp off.`;
+  if (n === "god") return "Only HR can fill this slot.";
   if (e.role === "employee")
-    return `Only an admin on ${a}'s team can fill the ${s} slot.`;
-  return `You admin a different team, so you can't fill ${a}'s ${s} slot.`;
+    return `Only a manager on ${a}'s team can fill this slot.`;
+  return `You manage a different team, so you can't fill ${a}'s ${s} slot.`;
 }
 // Either admin may deny, so the deny button follows whichever slot they could stamp.
 export const canDenyRequest = (e, t, n = []) =>

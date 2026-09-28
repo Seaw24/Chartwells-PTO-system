@@ -51,6 +51,8 @@ export const applyStampFacts = (requests, factRows) => {
       ? {
           ...r,
           decidedByName: f.decided_by_name ?? null,
+          // Who in HR booked this on the requester's behalf. The database only fills it for HR.
+          bookedByName: f.booked_by_name ?? null,
           stamps: {
             team: {
               ...r.stamps.team,

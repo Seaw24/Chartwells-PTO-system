@@ -48,6 +48,10 @@ export function DateRangePicker({
   typeId: typeId,
   todayIso: todayIso,
   allowPast = !1,
+  // Any past date is selectable (HR booking for someone else), not just yesterday.
+  anyPast = !1,
+  // Who the dates are for, in the hint: "you are" or, when HR books, "Casey is".
+  whoIsOff = "you are",
   bookedDays = {},
 }) {
   const {
@@ -115,7 +119,7 @@ export function DateRangePicker({
       [k, S],
     ),
     H = toISO(new Date(toDateLocal(todayIso).getTime() - 864e5)),
-    I = allowPast ? H : todayIso,
+    I = anyPast ? "" : allowPast ? H : todayIso,
     D = !!b,
     q = D
       ? Rp(b, _ || m)
@@ -244,7 +248,7 @@ export function DateRangePicker({
         ? "One day selected. Tap another day to extend it."
         : q
           ? "Tap any day to start over."
-          : "Tap the day you are off. Tap a second day for a range.";
+          : `Tap the day ${whoIsOff} off. Tap a second day for a range.`;
   return (
     <div
       className="rounded-card border border-line bg-card p-3"

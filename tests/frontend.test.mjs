@@ -197,7 +197,7 @@ test("CSV safely round-trips quotes, commas, newlines, and formula-like names", 
   );
 });
 test("every approvals tab has empty-state copy", () => {
-  for (const tab of approvals.APPROVAL_TABS("Waiting on god admin")) {
+  for (const tab of approvals.APPROVAL_TABS("Waiting on HR")) {
     const empty = approvals.APPROVAL_EMPTY_STATES[tab.value];
     assert.ok(empty, `no empty state for the "${tab.value}" tab`);
     assert.ok(empty.icon, `no empty-state icon for the "${tab.value}" tab`);
@@ -460,11 +460,11 @@ test("a blocked stamp click explains itself in the viewer's own terms", () => {
       helpers.stampBlockedReason(me, req, slot, users);
   assert.match(reason(f.requester, f.pending(), "team"), /your own request/i);
   assert.match(reason(f.requester, f.pending(), "god"), /your own request/i);
-  assert.match(reason(f.teamAdmin, f.pending(), "god"), /god admin/i);
+  assert.match(reason(f.teamAdmin, f.pending(), "god"), /\bHR\b/);
   assert.match(reason(f.otherAdmin, f.pending(), "team"), /team/i);
   assert.match(
     reason(f.teamAdmin, f.pending({ god: { by: "g1", at: now } }), "god"),
-    /god admin/i,
+    /\bHR\b/,
   );
   assert.match(
     reason(
@@ -612,7 +612,7 @@ test("the red seal is how a denial is taken back, on the same rule as a stamp", 
   // It names whoever made the decision, so the reader knows who to ask.
   assert.match(
     helpers.stampBlockedReason(f.otherAdmin, denied("ta", soon), "team", f.all),
-    /Sarah.*God Admin.*denial/i,
+    /Sarah.*\bHR\b.*denial/i,
   );
   // Only the seal that turned red lifts it; the other one is settled.
   assert.equal(
@@ -624,4 +624,77 @@ test("the red seal is how a denial is taken back, on the same rule as a stamp", 
     helpers.stampAction(f.requester, denied("ta", soon), "team", f.all),
     null,
   );
+});
+test("HR bookings may use past dates; every other rule still applies", () => {
+  const type = { id: "vac", name: "Vacation", allowBackdate: false };
+  const draft = (start) => ({ lines: [{ type: "vac", start, end: start }] });
+  const base = {
+    todayIso: "2026-09-28",
+    balances: { vac: 5 },
+    ptoTypes: [type],
+  };
+  const past = policy.validateDraft({ ...base, draft: draft("2026-09-21") });
+  assert.equal(past.ok, false);
+  assert.match(past.lineResults[0].errors.join(" "), /in the past/);
+  assert.equal(
+    policy.validateDraft({ ...base, draft: draft("2026-09-21"), allowPast: true })
+      .ok,
+    true,
+  );
+  // Balance still binds an HR booking.
+  const short = policy.validateDraft({
+    ...base,
+    balances: { vac: 0 },
+    draft: draft("2026-09-21"),
+    allowPast: true,
+  });
+  assert.equal(short.ok, false);
+  assert.match(short.lineResults[0].errors.join(" "), /balance is short/);
+});
+test("stamp facts carry who in HR booked a request, when the database says so", () => {
+  const request = mappers.mapRequest({
+    id: "r1",
+    requester_id: "u",
+    status: "approved",
+    request_lines: [],
+  });
+  const [booked] = mappers.applyStampFacts([request], [
+    { request_id: "r1", booked_by_name: "Dana Smith" },
+  ]);
+  assert.equal(booked.bookedByName, "Dana Smith");
+  const [plain] = mappers.applyStampFacts([request], [{ request_id: "r1" }]);
+  assert.equal(plain.bookedByName, null);
+});
+test("roles read as HR and Manager while the stored values stay the same", () => {
+  assert.equal(names.ROLE_META.god_admin.label, "HR");
+  assert.equal(names.ROLE_META.admin.label, "Manager");
+  assert.equal(names.isGodAdmin("god_admin"), true);
+});
+test("an HR booking goes to book_requests_for with the person and the same item shape", async () => {
+  const { createSupabaseDataSource } = await server.ssrLoadModule(
+    "/src/data/supabaseDataSource.jsx",
+  );
+  const calls = [];
+  const client = {
+    rpc: async (name, args) => (calls.push({ name, args }), { data: [], error: null }),
+  };
+  const source = createSupabaseDataSource(client);
+  await source.bookRequestsFor("person-1", {
+    lines: [
+      { type: "vac", start: "2026-09-21", end: "2026-09-21", note: " Called in " },
+      { type: "hol", start: "2026-12-28", end: "2026-12-28", holidayId: "h1", note: "" },
+    ],
+  });
+  assert.deepEqual(calls, [
+    {
+      name: "book_requests_for",
+      args: {
+        p_requester: "person-1",
+        p_requests: [
+          { type_id: "vac", start: "2026-09-21", end: "2026-09-21", holiday_id: null, note: "Called in" },
+          { type_id: "hol", start: "2026-12-28", end: "2026-12-28", holiday_id: "h1", note: null },
+        ],
+      },
+    },
+  ]);
 });

@@ -343,6 +343,15 @@ export function RequestDetailModal({
           <Component_ss label="Submitted">
             <span className="text-ink-soft">{timeAgo(req.submittedAt, h)}</span>
           </Component_ss>
+          {/* Only HR ever receives bookedByName. */}
+          {req.bookedByName && (
+            <Component_ss label="Booked by">
+              <span className="text-ink-soft">
+                {req.bookedByName}
+                {" (HR)"}
+              </span>
+            </Component_ss>
+          )}
           {$ && req.decidedAt && (
             <Component_ss
               label={req.status === "approved" ? "Approved by" : "Decided by"}

@@ -147,7 +147,7 @@ export function Login() {
           </form>
           <p className="mt-6 text-xs leading-relaxed text-ink-mute">
             {
-              "Use the email and password your manager gave you. If you cannot sign in, ask a God Admin for a new temporary password."
+              "Use the email and password your manager gave you. If you cannot sign in, ask HR for a new temporary password."
             }
           </p>
         </div>

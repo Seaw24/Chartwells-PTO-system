@@ -13,10 +13,14 @@ and a role-switchable demo mode. Supabase (auth, DB, RLS) is the next phase.
 
 - **Employees** (dining/kitchen staff): request time off, track balances, see the team calendar.
   Not desk workers; many check on a phone mid-shift. Effortless beats powerful.
-- **Admins** (kitchen/FOH managers): approve their team's requests, watch coverage.
-- **God Admin** (operations lead): everything, plus policy config, people, and reports.
+- **Managers** (kitchen/FOH managers; stored as team membership role `admin`): approve their
+  team's requests, watch coverage.
+- **HR** (operations lead; stored as org role `god_admin`): everything, plus policy config,
+  people, and reports.
 
-Three roles: `employee`, `admin` (scoped to one team), `god_admin` (all teams).
+Three roles: `employee`, `admin` (scoped to one team), `god_admin` (all teams). The app shows
+them as Employee, Manager and HR. Those are display names for the same stored values, not
+separate roles; the database, SQL helpers and code keep the stored names.
 
 ## Tone
 

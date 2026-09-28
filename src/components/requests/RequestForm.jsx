@@ -28,6 +28,10 @@ import { CalendarHeart as Vendor_CalendarHeart } from "lucide-react";
 import { holidaysOverlapping } from "../../utils/holidayDayOff.jsx";
 import { holidayDaysUsed } from "../../utils/holidayDayOff.jsx";
 import { holidayNote } from "../../utils/holidayDayOff.jsx";
+import { isGodAdmin } from "../../utils/constants.jsx";
+import { Stamp as Vendor_Stamp } from "lucide-react";
+import { BookForPicker } from "./BookForPicker.jsx";
+import { rememberBookedFor } from "./BookForPicker.jsx";
 export const normalizeDraftLine = (e = {}) => ({
   type: e.type || "",
   start: e.start || "",
@@ -43,7 +47,14 @@ export function RequestForm({
   onCancel: onCancel,
 }) {
   const r = useCurrentUser(),
-    s = r.id,
+    // HR can book for someone else: the form then reads and files everything as that person, and
+    // the booking is approved on save. Everyone else only ever files for themselves.
+    isHr = isGodAdmin(r.role),
+    [forId, setForId] = React.useState(() =>
+      isHr && prefill.forUserId ? prefill.forUserId : r.id,
+    ),
+    s = forId,
+    booking = forId !== r.id,
     i = useToday(),
     {
       getRequests: getRequests,
@@ -52,6 +63,7 @@ export function RequestForm({
       grantFor: grantFor,
       normalDaysOffFor: normalDaysOffFor,
       submitRequest: submitRequest,
+      bookRequestsFor: bookRequestsFor,
       coverageForRange: coverageForRange,
     } = useDataSource(),
     {
@@ -68,6 +80,15 @@ export function RequestForm({
     b = useBumpVersion(),
     [N, _] = React.useState(() => [normalizeDraftLine(prefill)]),
     [j, S] = React.useState(0),
+    [sending, setSending] = React.useState(false),
+    person = booking ? users.find((u) => u.id === forId) ?? null : r,
+    personFirst = firstName(person == null ? void 0 : person.name),
+    // A draft is checked against one person's balances and bookings, so it starts over with them.
+    choosePerson = (id) => {
+      setForId(id);
+      _([normalizeDraftLine()]);
+      S(0);
+    },
     D = React.useMemo(() => {
       const Y = N.filter((ee) => ee.start && ee.end);
       return Y.length
@@ -134,13 +155,23 @@ export function RequestForm({
           dateRules: dateRules,
           blackouts: blackouts,
           holidays: holidays,
+          allowPast: booking,
         }),
-      [N, P, U, i, Z, ptoTypes, dateRules, blackouts, holidays],
+      [N, P, U, i, Z, ptoTypes, dateRules, blackouts, holidays, booking],
     ),
     he = N.every((Y) => Y.type && Y.start && Y.end),
-    K = he && V.ok,
-    A = V.days || 0;
-  if (T === null) return null;
+    K = he && V.ok && !sending,
+    A = V.days || 0,
+    picker = isHr && (
+      <BookForPicker viewer={r} value={forId} onChange={choosePerson} />
+    );
+  if (T === null)
+    return picker ? (
+      <div className="space-y-5">
+        {picker}
+        <p className="text-sm text-ink-mute">{"Loading…"}</p>
+      </div>
+    ) : null;
   const B = (Y, ee) => {
       const prev = N[Y];
       let next = {
@@ -196,19 +227,32 @@ export function RequestForm({
       });
     };
   function ye(Y) {
-    (Y.preventDefault(),
-      K &&
-        submitRequest(X).then(() => {
-          b();
-          const ee =
-            N.length === 1
-              ? `Request submitted for ${formatDateRange(N[0].start, N[0].end)}.`
-              : `${N.length} requests submitted.`;
-          (x(ee, {
-            kind: "success",
-          }),
-            onSubmitted == null || onSubmitted());
-        }));
+    if ((Y.preventDefault(), !K)) return;
+    setSending(true);
+    (booking ? bookRequestsFor(forId, X) : submitRequest(X))
+      .then(() => {
+        b();
+        booking && rememberBookedFor(r.id, forId);
+        const ee = booking
+          ? N.length === 1
+            ? `Booked for ${personFirst}, ${formatDateRange(N[0].start, N[0].end)}. It's approved.`
+            : `${N.length} time offs booked for ${personFirst}. They're approved.`
+          : N.length === 1
+            ? `Request submitted for ${formatDateRange(N[0].start, N[0].end)}.`
+            : `${N.length} requests submitted.`;
+        (x(ee, {
+          kind: "success",
+        }),
+          onSubmitted == null || onSubmitted());
+      })
+      // The database has the last word (an overlap or balance the form could not see); say why.
+      .catch((error) =>
+        x((error == null ? void 0 : error.message) || "That did not go through. Try again.", {
+          kind: "error",
+          duration: 6000,
+        }),
+      )
+      .finally(() => setSending(false));
   }
   const Q = {
     todayIso: i,
@@ -227,10 +271,25 @@ export function RequestForm({
     blackouts: blackouts,
     holidays: holidays,
     selfId: s,
-    teamId: (r == null ? void 0 : r.team) ?? null,
+    teamId: (person == null ? void 0 : person.team) ?? null,
+    booking: booking,
+    personFirst: personFirst,
   };
   return (
     <form onSubmit={ye} className="space-y-5">
+      {picker}
+      {booking && (
+        <p className="flex items-start gap-2.5 rounded-card border border-accent-line bg-accent-soft px-3.5 py-3 text-sm leading-snug text-ink animate-fade-in">
+          <Vendor_Stamp size={16} className="mt-0.5 shrink-0 text-accent-ink" />
+          <span>
+            {"Booking for "}
+            <span className="font-semibold">
+              {person == null ? void 0 : person.name}
+            </span>
+            {". It will be approved right away with your HR stamp. Past dates are allowed."}
+          </span>
+        </p>
+      )}
       <div className="space-y-3">
         {N.map((Y, ee) => {
           const Pe = Y.type && Y.start && Y.end;
@@ -293,12 +352,14 @@ export function RequestForm({
               {A === 1 ? "" : "s"}
               {" off,"}{" "}
               <span className="text-ink-mute">
-                {"as "}
-                {firstName(r == null ? void 0 : r.name)}
+                {booking ? "for " : "as "}
+                {booking ? personFirst : firstName(r == null ? void 0 : r.name)}
               </span>
             </span>
           ) : (
-            <span className="text-ink-mute">{"Pick your dates to start"}</span>
+            <span className="text-ink-mute">
+              {booking ? "Pick the dates to start" : "Pick your dates to start"}
+            </span>
           )}
         </p>
         <div className="flex shrink-0 items-center gap-2">
@@ -308,7 +369,13 @@ export function RequestForm({
             </Button>
           )}
           <Button type="submit" variant="primary" disabled={!K}>
-            {N.length > 1 ? `Submit ${N.length} requests` : "Submit request"}
+            {booking
+              ? N.length > 1
+                ? `Book & approve ${N.length}`
+                : "Book & approve"
+              : N.length > 1
+                ? `Submit ${N.length} requests`
+                : "Submit request"}
           </Button>
         </div>
       </div>
@@ -343,6 +410,8 @@ export function RequestLineEditor({
       holidays: holidays,
       selfId: selfId,
       teamId: teamId,
+      booking: booking,
+      personFirst: personFirst,
     } = ctx,
     j = !!(line.start && line.end),
     S = j ? lineDays(line, normalDaysOff) : 0,
@@ -381,6 +450,7 @@ export function RequestLineEditor({
                 dateRules: dateRules,
                 blackouts: blackouts,
                 holidays: holidays,
+                allowPast: booking,
               }).lineResults.find((K) => K.index === index)) == null
                 ? void 0
                 : $.errors) ?? [];
@@ -415,6 +485,7 @@ export function RequestLineEditor({
       dateRules,
       blackouts,
       holidays,
+      booking,
     ]),
     E = React.useMemo(
       () => bookedDaysByDate(existingRequests),
@@ -496,7 +567,9 @@ export function RequestLineEditor({
         </div>
       )}
       <section>
-        <h3 className="eyebrow mb-2.5">{"When are you off?"}</h3>
+        <h3 className="eyebrow mb-2.5">
+          {booking ? `When is ${personFirst} off?` : "When are you off?"}
+        </h3>
         <DateRangePicker
           value={{
             start: line.start,
@@ -505,6 +578,8 @@ export function RequestLineEditor({
           onChange={onChange}
           typeId={null}
           todayIso={todayIso}
+          anyPast={booking}
+          whoIsOff={booking ? `${personFirst} is` : "you are"}
           bookedDays={E}
         />
         {j && (
@@ -596,7 +671,7 @@ export function RequestLineEditor({
                 {q.name}
                 {" is only available "}
                 {windowLabel(q.id, dateRules)}
-                {". Change your dates to book it."}
+                {booking ? ". Change the dates to book it." : ". Change your dates to book it."}
               </p>
             ) : null}
           </section>
@@ -609,7 +684,11 @@ export function RequestLineEditor({
           {line.type && (
             <section>
               <div className="mb-2 flex items-baseline justify-between">
-                <h3 className="eyebrow">{"Note for your approver"}</h3>
+                <h3 className="eyebrow">
+                  {booking
+                    ? `Note (${personFirst} will see this)`
+                    : "Note for your approver"}
+                </h3>
                 <span className="text-[11px] text-ink-mute">{"Optional"}</span>
               </div>
               <textarea
@@ -620,7 +699,11 @@ export function RequestLineEditor({
                   })
                 }
                 rows={2}
-                placeholder="Add context for your approver..."
+                placeholder={
+                  booking
+                    ? "Add context, like “Called in sick”..."
+                    : "Add context for your approver..."
+                }
                 aria-label={
                   count > 1
                     ? `Note for time off ${index + 1}`

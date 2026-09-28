@@ -1,10 +1,12 @@
+// Display names only. "HR" is stored as org_role 'god_admin' and "Manager" is team membership
+// role 'admin'; only the labels differ, and they are the same roles.
 export const ROLE_META = {
   god_admin: {
-    label: "God Admin",
+    label: "HR",
     tone: "navy",
   },
   admin: {
-    label: "Admin",
+    label: "Manager",
     tone: "accent",
   },
   employee: {

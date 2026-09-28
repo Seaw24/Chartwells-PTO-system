@@ -81,6 +81,8 @@ export function validateDraft({
   dateRules = [],
   blackouts = [],
   holidays = [],
+  // HR booking for someone else may use any past date; every other rule still applies.
+  allowPast = !1,
 }) {
   var N, _;
   const h = [],
@@ -127,10 +129,11 @@ export function validateDraft({
       if (
         ((p[S].days = H),
         type && (y[type] = (y[type] || 0) + H),
-        !(C != null && C.allowBackdate) &&
+        !allowPast &&
+          !(C != null && C.allowBackdate) &&
           toDateLocal(start) < toDateLocal(todayIso) &&
           g(S, "Start date is in the past."),
-        C != null && C.allowBackdate)
+        !allowPast && C != null && C.allowBackdate)
       ) {
         const q = toISO(new Date(toDateLocal(todayIso).getTime() - 864e5));
         toDateLocal(start) < toDateLocal(q) &&

@@ -1,7 +1,7 @@
 export const TEAM_ROLES = [
   {
     value: "admin",
-    label: "Admin",
+    label: "Manager",
   },
   {
     value: "employee",

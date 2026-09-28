@@ -65,7 +65,7 @@ export const APPROVAL_EMPTY_STATES = {
     icon: Vendor_Clock,
     title: "Nothing waiting on anyone else",
     description:
-      "Requests you have stamped wait here until the other admin stamps them.",
+      "Requests you have stamped wait here until the other approver stamps them.",
   },
   approved: {
     icon: Vendor_History,
@@ -159,7 +159,7 @@ export function Approvals() {
         canStampSlot(e, request, "team", users),
       [e, users],
     ),
-    waitingLabel = f ? "Waiting on team admin" : "Waiting on god admin";
+    waitingLabel = f ? "Waiting on manager" : "Waiting on HR";
   const { data: p = null } = useResource(
     ["approvals", V],
     async () => {
@@ -293,7 +293,7 @@ export function Approvals() {
             ? "You're all caught up. No requests are waiting on your stamp."
             : `${Bt.length} request${Bt.length === 1 ? "" : "s"} waiting on your stamp${_e >= 2 ? ` · oldest waited ${_e} days` : ""}`
           : g === "waiting"
-            ? `${Bt.length} request${Bt.length === 1 ? "" : "s"} you stamped, ${f ? "waiting on a team admin" : "waiting on a god admin"}.`
+            ? `${Bt.length} request${Bt.length === 1 ? "" : "s"} you stamped, ${f ? "waiting on a manager" : "waiting on HR"}.`
             : g === "approved"
               ? `${Q.approved} approved request${Q.approved === 1 ? "" : "s"} still ahead ${mt}.`
               : g === "denied"
