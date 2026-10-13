@@ -52,3 +52,7 @@ Configuration:
 - Function environment (server `.env` and the `functions` service in `docker-compose.yml`): `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `EMAIL_FROM_NAME`, `APP_URL`, `NOTIFY_SECRET`. Changing the Google account password revokes the App Password.
 - Database: one row in `notification_settings` with the function URL (`http://functions:9000/notify` inside the Docker network) and the same `NOTIFY_SECRET`. No row, no calls: deleting it is the off switch.
 - Checking the design: `POST /notify` with `{"samples_to": "you@example.com"}` and the secret header sends one of each email to that address.
+
+Email is best-effort: a failed call is a warning in the database log and never undoes the action; send failures are in the edge-functions container log.
+
+Maintenance: any bulk `update` of `requests.status` or the stamp columns, while the `notification_settings` row exists, emails everyone it touches. Before running one, delete the `notification_settings` row (or `alter table public.requests disable trigger requests_collect_notifications` inside the same maintenance transaction), and restore it (or re-`enable trigger`) afterwards.
