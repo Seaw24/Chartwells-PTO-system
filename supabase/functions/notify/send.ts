@@ -8,7 +8,12 @@ export async function sendAll(emails: OutgoingEmail[]): Promise<{ sent: number; 
   const user = Deno.env.get("GMAIL_USER");
   const pass = Deno.env.get("GMAIL_APP_PASSWORD");
   if (!user || !pass) throw new Error("GMAIL_USER and GMAIL_APP_PASSWORD must be set.");
+  // Pooled, so a batch of approvers reuses one TLS+AUTH connection instead of paying for a fresh
+  // one per message; a fresh connection per recipient is slow enough that an HR-plus-several-
+  // managers batch can outrun pg_net's timeout.
   const transport = nodemailer.createTransport({
+    pool: true,
+    maxConnections: 1,
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
@@ -18,21 +23,24 @@ export async function sendAll(emails: OutgoingEmail[]): Promise<{ sent: number; 
   const from = { name: Deno.env.get("EMAIL_FROM_NAME") ?? "Chartwells PTO", address: user };
   let sent = 0;
   let failed = 0;
-  for (const email of emails) {
-    try {
-      await transport.sendMail({
-        from,
-        to: email.to,
-        subject: email.subject,
-        html: email.html,
-        text: email.text,
-      });
-      sent++;
-    } catch (error) {
-      failed++;
-      console.error(`notify: sending "${email.subject}" to ${email.to} failed`, error);
+  try {
+    for (const email of emails) {
+      try {
+        await transport.sendMail({
+          from,
+          to: email.to,
+          subject: email.subject,
+          html: email.html,
+          text: email.text,
+        });
+        sent++;
+      } catch (error) {
+        failed++;
+        console.error(`notify: sending "${email.subject}" to ${email.to} failed`, error);
+      }
     }
+  } finally {
+    transport.close();
   }
-  transport.close();
   return { sent, failed };
 }

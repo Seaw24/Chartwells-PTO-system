@@ -98,17 +98,22 @@ begin
     return null;
   end if;
   begin
+    -- Sending to every approver over SMTP, one at a time, can take tens of seconds; the edge
+    -- worker itself times out at 60s, so this stays just under that to let net._http_response
+    -- show the real result instead of a timeout pg_net invented.
     perform net.http_post(
       url := settings.function_url,
       body := jsonb_build_object('events', events),
       headers := jsonb_build_object('Content-Type', 'application/json', 'x-notify-secret', settings.secret),
-      timeout_milliseconds := 10000);
+      timeout_milliseconds := 55000);
   exception when others then
     raise warning 'Request notifications were not sent: %', sqlerrm;
   end;
   return null;
 end$$;
 
+-- settle_request (two_stamp_approval.sql) only ever moves pending to approved and never touches
+-- team_stamp_by/god_stamp_by itself, so settling a request at commit queues no event here.
 drop trigger if exists requests_send_notifications on public.requests;
 create constraint trigger requests_send_notifications
 after insert or update on public.requests
