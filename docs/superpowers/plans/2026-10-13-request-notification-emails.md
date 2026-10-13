@@ -1731,13 +1731,13 @@ git commit -m "Deploy whole Edge Function folders, one function at a time if ask
 
 ### Task 8: Production rollout (owner approves each step)
 
-Run every server command through SSM (`aws ssm send-command … AWS-RunShellScript`, as in `scripts/deploy-aws.mjs`) unless it says the owner runs it. Never print `.env` values. Stop and report if any step fails.
+Run every server command through SSM (`aws ssm send-command … AWS-RunShellScript`, as in `scripts/deploy-aws.mjs`) unless it says the owner runs it. Never print `.env` values or put a secret on a command line (`ps` can see arguments): pass secrets to `psql` on stdin. Stop and report if any step fails.
 
-- [ ] **Step 1: Confirm `employee-access` on the server matches the repo** (the full deploy would replace it)
+Known state on 2026-10-13:
+- The live frontend (bundle `index-Dqkwmrcb.js`, deployed 15:13) includes uncommitted "Account details" work that is only in the main checkout (`Settings.jsx`, `OrgContext.jsx`, `supabaseDataSource.jsx`, `queryClient.js`). The main checkout also has uncommitted `employee-access` changes. Building the frontend from `request-emails` alone would remove that work from the live site.
+- Therefore: deploy only the `notify` function from this branch (`--function=notify`), and deploy the frontend only from a checkout that contains both this branch and the Account-details work (Step 7).
 
-Another session has uncommitted `employee-access` changes in the main checkout, so this branch's copy may not be what is live. Always deploy with `--function=notify`. (For the record: compare `sha256sum …/volumes/functions/employee-access/index.ts` on the server with `shasum -a 256` of both checkouts' copies and tell the owner.)
-
-- [ ] **Step 2: Back up server config and add the non-secret settings** (owner approves)
+- [ ] **Step 1: Back up server config and add the non-secret settings** (owner approves)
 
 ```bash
 set -eu
@@ -1745,11 +1745,12 @@ cd /opt/chartwells/chartwells-supabase
 stamp=$(date +%Y%m%d-%H%M%S)
 cp .env ".env.bak-notify-$stamp"
 cp docker-compose.yml "docker-compose.yml.bak-notify-$stamp"
+# Appending to a file without a trailing newline would glue onto its last line.
+[ -z "$(tail -c1 .env)" ] || echo >> .env
 grep -q '^NOTIFY_SECRET=' .env || echo "NOTIFY_SECRET=$(openssl rand -hex 32)" >> .env
 grep -q '^APP_URL=' .env || echo 'APP_URL=https://d2hxxrhfzq1k3r.cloudfront.net' >> .env
 grep -q '^EMAIL_FROM_NAME=' .env || echo 'EMAIL_FROM_NAME="Chartwells PTO"' >> .env
 python3 - <<'PY'
-import re
 p = "docker-compose.yml"
 s = open(p).read()
 if "NOTIFY_SECRET:" not in s:
@@ -1763,70 +1764,103 @@ PY
 docker compose config --quiet && echo "compose OK; backups .env.bak-notify-$stamp docker-compose.yml.bak-notify-$stamp"
 ```
 
-Expected: `compose OK; …` (docker compose may warn that `GMAIL_USER`/`GMAIL_APP_PASSWORD` are unset; that is the next step).
+Expected: `compose OK; …` (compose may warn that `GMAIL_USER`/`GMAIL_APP_PASSWORD` are unset until Step 2).
 
-- [ ] **Step 3: The owner adds the Gmail credentials themselves**
+- [ ] **Step 2: The owner adds the Gmail credentials themselves**
 
 The owner opens AWS console → Systems Manager → Session Manager → Start session on `i-0ab29bf3040dc6657`, and pastes:
 
 ```bash
-bash -c 'read -p "Gmail address: " GU; read -s -p "App Password: " GP; echo; printf "GMAIL_USER=%s\nGMAIL_APP_PASSWORD=\"%s\"\n" "$GU" "$GP" | sudo tee -a /opt/chartwells/chartwells-supabase/.env >/dev/null; echo saved'
+bash -c 'f=/opt/chartwells/chartwells-supabase/.env; if grep -q "^GMAIL_USER=" "$f"; then echo "already set"; exit; fi; read -p "Gmail address: " GU; read -s -p "App Password: " GP; echo; [ -z "$(sudo tail -c1 "$f")" ] || echo | sudo tee -a "$f" >/dev/null; printf "GMAIL_USER=%s\nGMAIL_APP_PASSWORD=\"%s\"\n" "$GU" "$GP" | sudo tee -a "$f" >/dev/null; echo saved'
 ```
 
-Then verify (names only): `grep -c '^GMAIL_' /opt/chartwells/chartwells-supabase/.env` → `2`.
+Verify (names only): `grep -c '^GMAIL_' /opt/chartwells/chartwells-supabase/.env` → `2`.
 
-- [ ] **Step 4: Deploy the function and recreate the container** (owner approves; a few seconds of downtime for `employee-access`)
+- [ ] **Step 3: Deploy the function and recreate only its container** (owner approves; a few seconds of downtime for `employee-access`)
 
-Local: `node scripts/deploy-aws.mjs --function-only --function=notify`.
-Server: `cd /opt/chartwells/chartwells-supabase && docker compose up -d functions && sleep 5 && docker inspect supabase-edge-functions --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E 'GMAIL|NOTIFY|APP_URL|EMAIL_FROM'`
+Local, from the worktree: `node scripts/deploy-aws.mjs --function-only --function=notify`.
+Server:
+
+```bash
+set -eu
+cd /opt/chartwells/chartwells-supabase
+docker compose ps functions   # must list supabase-edge-functions, i.e. this compose project owns it
+docker compose up -d --no-deps functions
+sleep 5
+docker inspect supabase-edge-functions --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | grep -E 'GMAIL|NOTIFY|APP_URL|EMAIL_FROM'
+```
+
 Expected: the five names listed.
 
-- [ ] **Step 5: Probe the gate and send the samples** (owner gives the address — ideally their work Outlook inbox — and approves)
+- [ ] **Step 4: Probe the gate, the events path and the samples** (owner gives the sample address — ideally their work Outlook inbox — and approves)
 
 ```bash
 set -eu
 cd /opt/chartwells/chartwells-supabase
 SECRET=$(grep '^NOTIFY_SECRET=' .env | cut -d= -f2-)
-docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 -v secret="$SECRET" -v to="OWNER_ADDRESS" <<'SQL'
-select net.http_post('http://functions:9000/notify', '{"events":[]}'::jsonb, headers := '{"Content-Type":"application/json","x-notify-secret":"wrong"}'::jsonb) as bad;
-select net.http_post('http://functions:9000/notify', jsonb_build_object('samples_to', :'to'), headers := jsonb_build_object('Content-Type','application/json','x-notify-secret', :'secret'), timeout_milliseconds := 30000) as good;
-select pg_sleep(20);
-select id, status_code, content from net._http_response order by id desc limit 2;
+TO='OWNER_ADDRESS'
+{
+  printf '\\set secret %s\n' "'$SECRET'"
+  printf '\\set to %s\n' "'$TO'"
+  cat <<'SQL'
+-- 1. Wrong secret → 403. 2. Events for a request that is not pending → loads rows, sends nothing.
+-- 3. Samples → one of each email to :to.
+select net.http_post('http://functions:9000/notify', '{"events":[]}'::jsonb,
+  headers := '{"Content-Type":"application/json","x-notify-secret":"wrong"}'::jsonb) as bad;
+select net.http_post('http://functions:9000/notify',
+  jsonb_build_object('events', jsonb_build_array(jsonb_build_object('kind','submitted','request_id',
+    (select id from public.requests where status <> 'pending' order by submitted_at desc limit 1)))),
+  headers := jsonb_build_object('Content-Type','application/json','x-notify-secret', :'secret'),
+  timeout_milliseconds := 55000) as events_path;
+select net.http_post('http://functions:9000/notify', jsonb_build_object('samples_to', :'to'),
+  headers := jsonb_build_object('Content-Type','application/json','x-notify-secret', :'secret'),
+  timeout_milliseconds := 55000) as samples;
 SQL
+} | docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 -At
+# Poll until all three responses are in (up to 2 minutes).
+for i in $(seq 1 24); do
+  n=$(docker exec supabase-db psql -U postgres -At -c "select count(*) from net._http_response where created > now() - interval '5 minutes'")
+  [ "$n" -ge 3 ] && break; sleep 5
+done
+docker exec supabase-db psql -U postgres -At -c "select id, status_code, timed_out, error_msg, content from net._http_response where created > now() - interval '5 minutes' order by id"
 ```
 
-Expected: one response `403 {"error":"Forbidden"}` and one `200 {"sent":6,"failed":0}`. If `sent` is 0, read `docker logs --tail 50 supabase-edge-functions` (nodemailer/SMTP errors). The owner checks the six emails in Outlook and on a phone; adjust `email.ts` if needed (repeat Task 3 tests, redeploy with `--function=notify`).
+Expected: `403 {"error":"Forbidden"}`, `200 {"sent":0,"failed":0}`, `200 {"sent":6,"failed":0}`. If `sent` is 0 for the samples or anything timed out, read `docker logs --tail 80 supabase-edge-functions` (nodemailer/SMTP errors). The owner checks the six emails in Outlook and on a phone; adjust `email.ts` if needed (re-run `tests/notify.test.mjs`, redeploy with `--function=notify`).
 
-- [ ] **Step 6: Apply the migration and turn notifications on** (owner approves)
+- [ ] **Step 5: Apply the migration and turn notifications on** (owner approves)
 
-Copy the migration to the server through SSM (base64, sha256-checked, like the deploy script), then:
+Pre-check: `select tableowner from pg_tables where schemaname='public' and tablename='requests'` → `postgres`, and `select has_function_privilege('postgres','net.http_post(text,jsonb,jsonb,jsonb,integer)','execute')` → `t`.
+Copy `supabase/migrations/202610130002_request_notifications.sql` to the server through SSM (base64, sha256-checked, like the deploy script) as `/tmp/202610130002_request_notifications.sql`, then:
 
 ```bash
 set -eu
 cd /opt/chartwells/chartwells-supabase
-SECRET=$(grep '^NOTIFY_SECRET=' .env | cut -d= -f2-)
 docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 < /tmp/202610130002_request_notifications.sql
-docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 -v secret="$SECRET" <<'SQL'
+SECRET=$(grep '^NOTIFY_SECRET=' .env | cut -d= -f2-)
+{
+  printf '\\set secret %s\n' "'$SECRET'"
+  cat <<'SQL'
 insert into public.notification_settings (function_url, secret)
 values ('http://functions:9000/notify', :'secret')
 on conflict (id) do update set function_url = excluded.function_url, secret = excluded.secret;
 select tgname from pg_trigger where tgrelid = 'public.requests'::regclass and tgname like 'requests_%notifications' order by 1;
 select has_table_privilege('authenticated', 'public.notification_settings', 'select') as browser_can_read;
 SQL
+} | docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 -At
 ```
 
-Expected: `requests_collect_notifications`, `requests_send_notifications`; `browser_can_read = f`.
+Expected: `requests_collect_notifications`, `requests_send_notifications`; `browser_can_read = f`. From now on, real submits and decisions send email.
 
-- [ ] **Step 7: Deploy the frontend** (owner approves)
+- [ ] **Step 6: Check the email links in a browser** (Task 6 Step 10, with the owner)
 
-Back up the bucket first: `aws s3 sync s3://chartwells-pto-app-836548369971 ~/Downloads/chartwells-pto-s3-backup-20261013`. Then `node scripts/deploy-aws.mjs --frontend-only`, `aws cloudfront wait invalidation-completed --distribution-id E28QGWFC6YNZD5 --id <id>`, and check `curl -s https://d2hxxrhfzq1k3r.cloudfront.net/ | grep -o 'assets/index-[^"]*\.js'` names the new bundle.
+Run the dev server from the worktree against the live backend, and with the owner signed in confirm `/approvals?q=<name>` fills the search and `/requests?req=<id>` opens the pop-up, including through the sign-in page. Nothing is deployed in this step.
+
+- [ ] **Step 7: Deploy the frontend from a combined checkout** (owner approves)
+
+Only once the Account-details work is committed in the main checkout: merge `request-emails` into `main` (superpowers:finishing-a-development-branch), run the full test suite and `node scripts/check-source.mjs` there, then back up the bucket (`aws s3 sync s3://chartwells-pto-app-836548369971 ~/Downloads/chartwells-pto-s3-backup-20261013-2`) and run `node scripts/deploy-aws.mjs --frontend-only` from the merged checkout. Wait for the invalidation, then check `curl -s https://d2hxxrhfzq1k3r.cloudfront.net/ | grep -o 'assets/index-[^"]*\.js'` names the new bundle and the live `Settings-*.js` still contains "Account details saved.".
 
 - [ ] **Step 8: Live check with the owner**
 
-A real submit emails every Manager and HR user in that person's org, so the owner chooses how to test (for example, submit and cancel a one-day request from their own account after warning HR). Confirm: approvers get one email; approving/denying emails the requester; links open the filtered Approvals page and the request pop-up. Check `docker logs --tail 50 supabase-edge-functions` for `notify: … sent`.
+A real submit emails every Manager and HR user for that person, so the owner chooses how to test (for example, submit and cancel a one-day request from their own account after warning HR). Confirm: approvers get one email; approving/denying emails the requester; links open the filtered Approvals page and the request pop-up. Check `docker logs --tail 50 supabase-edge-functions` for `notify: … sent` and `net._http_response` for 200s.
 
-- [ ] **Step 9: Merge**
-
-After the owner is happy, use superpowers:finishing-a-development-branch to merge `request-emails` into `main`.
-
-Rollback, if needed: `delete from public.notification_settings;` stops all calls at once. Full removal: run `202610130002_request_notifications_rollback.sql`, restore the `.env`/`docker-compose.yml` backups from Step 2, and `docker compose up -d functions`.
+Rollback, if needed: `delete from public.notification_settings;` stops all calls at once. Full removal: run `202610130002_request_notifications_rollback.sql`, restore the `.env`/`docker-compose.yml` backups from Step 1, and `docker compose up -d --no-deps functions`.
