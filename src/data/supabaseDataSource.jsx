@@ -345,15 +345,6 @@ export function createSupabaseDataSource(clientOverride = null) {
       );
       return Promise.all((ids ?? []).map(requestById));
     },
-    submitWellnessRequest: async ({ days: days, note: note }) =>
-      requestById(
-        unwrap(
-          await client.rpc("submit_wellness_request", {
-            p_days: days,
-            p_note: (note == null ? void 0 : note.trim()) || null,
-          }),
-        ),
-      ),
     cancelRequest: async (l) => (
       unwrap(
         await client.rpc("cancel_request", {

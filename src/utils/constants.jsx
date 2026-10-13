@@ -15,8 +15,6 @@ export const ROLE_META = {
   },
 };
 export const DEFAULT_NORMAL_DAYS_OFF = [0, 6];
-// Matches the database limit in submit_wellness_request.
-export const WELLNESS_MAX_DAYS = 10;
 // Names come straight off a profile row, where the column can be null, and a `= ""` default only
 // fires for undefined. Both of these take whatever they are handed.
 export const firstName = (e) => (e == null ? "" : String(e)).split(" ")[0];

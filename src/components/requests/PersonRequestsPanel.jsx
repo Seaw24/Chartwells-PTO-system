@@ -18,7 +18,6 @@ import { EmptyState } from "../ui/EmptyState.jsx";
 import { CalendarX as Vendor_CalendarX } from "lucide-react";
 import { requestLines } from "../../utils/requestHelpers.jsx";
 import { requestPrimaryTypeId } from "../../utils/requestHelpers.jsx";
-import { isWellnessGrant } from "../../utils/requestHelpers.jsx";
 import { requestDays } from "../../utils/requestHelpers.jsx";
 import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
 import { StatusChip } from "./RequestDetailModal.jsx";
@@ -322,10 +321,10 @@ export function PersonRequestsPanel({
                     </div>
                     <p className="text-[11px] text-ink-mute">
                       <span className="font-medium text-ink-soft tabular">
-                        {isWellnessGrant(b) ? `+${b.grantDays}` : S}
+                        {S}
                       </span>
-                      {isWellnessGrant(b) ? " wellness day" : " charged day"}
-                      {(isWellnessGrant(b) ? b.grantDays : S) === 1 ? "" : "s"}
+                      {" charged day"}
+                      {S === 1 ? "" : "s"}
                       {b.decidedBy &&
                         ` · by ${(T = (E = userById(b.decidedBy)) == null ? void 0 : E.name) == null ? void 0 : T.split(" ")[0]}`}
                     </p>

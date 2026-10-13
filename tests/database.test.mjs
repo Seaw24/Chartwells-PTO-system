@@ -63,6 +63,12 @@ try {
       "utf8",
     ),
   );
+  await db.exec(
+    fs.readFileSync(
+      "supabase/migrations/202610130001_remove_wellness_requests.sql",
+      "utf8",
+    ),
+  );
 } catch (error) {
   console.error(error.message, error.position);
   process.exit(1);
@@ -76,7 +82,7 @@ const admin = "00000000-0000-0000-0000-000000000001",
   wellness = "00000000-0000-0000-0000-000000000011",
   team = "00000000-0000-0000-0000-000000000020";
 await db.exec(
-  `insert into auth.users values('${admin}'),('${employee}'),('${other}'),('${lead}');insert into profiles(id,name,email,org_role,password_setup_required) values('${admin}','Admin','admin@example.test','god_admin',false),('${employee}','Employee','employee@example.test','member',false),('${other}','Other','other@example.test','member',false),('${lead}','Lead','lead@example.test','member',false);insert into teams(id,name) values('${team}','Dining');insert into team_memberships(team_id,user_id) values('${team}','${employee}'),('${team}','${other}');insert into team_memberships(team_id,user_id,role) values('${team}','${lead}','admin');insert into pto_types(id,name,default_days) values('${type}','Vacation',10);insert into pto_types(id,name,default_days,is_wellness) values('${wellness}','Wellness Day',2,true);insert into pto_grants values('${employee}','${type}',extract(year from current_date)::integer,10),('${other}','${type}',extract(year from current_date)::integer,10),('${employee}','${wellness}',extract(year from current_date)::integer,2);`,
+  `insert into auth.users values('${admin}'),('${employee}'),('${other}'),('${lead}');insert into profiles(id,name,email,org_role,password_setup_required) values('${admin}','Admin','admin@example.test','god_admin',false),('${employee}','Employee','employee@example.test','member',false),('${other}','Other','other@example.test','member',false),('${lead}','Lead','lead@example.test','member',false);insert into teams(id,name) values('${team}','Dining');insert into team_memberships(team_id,user_id) values('${team}','${employee}'),('${team}','${other}');insert into team_memberships(team_id,user_id,role) values('${team}','${lead}','admin');insert into pto_types(id,name,default_days) values('${type}','Vacation',10);insert into pto_types(id,name,default_days) values('${wellness}','Wellness Day',2);insert into pto_grants values('${employee}','${type}',extract(year from current_date)::integer,10),('${other}','${type}',extract(year from current_date)::integer,10),('${employee}','${wellness}',extract(year from current_date)::integer,2);`,
 );
 async function as(id, sql, args = []) {
   await db.exec(
@@ -328,84 +334,23 @@ test("admin config procedures create types, windows, blackouts, and teams", asyn
   );
   await as(admin, "select save_team(null,'Catering','Events','[]'::jsonb)");
 });
-let wellnessRequest;
-const wellnessGrant = async () =>
-  Number(
-    (
-      await as(
-        admin,
-        "select amount from pto_grants where user_id=$1 and pto_type_id=$2",
-        [employee, wellness],
-      )
-    ).rows[0].amount,
-  );
-test("wellness requests validate the day count and refuse self-approval", async () => {
-  await assert.rejects(
-    as(employee, "select submit_wellness_request(0,null)"),
-    /between 1 and 10/,
-  );
-  await assert.rejects(
-    as(employee, "select submit_wellness_request(11,null)"),
-    /between 1 and 10/,
-  );
-  wellnessRequest = (
-    await as(employee, "select submit_wellness_request(2,$1) id", ["Recharge"])
-  ).rows[0].id;
+test("Wellness Day top-up requests are gone, and Wellness Day is an ordinary type", async () => {
   assert.deepEqual(
     (
-      await as(
-        employee,
-        "select kind,status,grant_days,grant_type_id,note from requests where id=$1",
-        [wellnessRequest],
+      await db.query(
+        "select to_regprocedure('public.submit_wellness_request(integer,text)') s, to_regprocedure('public.decide_wellness_request(uuid,boolean,text)') d, to_regprocedure('public.apply_wellness_grant()') a",
       )
     ).rows[0],
-    {
-      kind: "wellness_grant",
-      status: "pending",
-      grant_days: 2,
-      grant_type_id: wellness,
-      note: "Recharge",
-    },
+    { s: null, d: null, a: null },
   );
-  await assert.rejects(
-    as(employee, "select stamp_request($1,'god')", [wellnessRequest]),
-    /Not authorized/,
+  assert.deepEqual(
+    (
+      await db.query(
+        "select table_name, column_name from information_schema.columns where table_schema='public' and column_name in ('kind','grant_type_id','grant_days','grant_year','is_wellness')",
+      )
+    ).rows,
+    [],
   );
-});
-test("a wellness request needs both stamps, and removing one takes its days back", async () => {
-  assert.equal(await wellnessGrant(), 2);
-  await as(lead, "select stamp_request($1,'team')", [wellnessRequest]);
-  // One stamp is not a grant: the days only land when the second arrives.
-  assert.equal(await wellnessGrant(), 2);
-  await as(admin, "select stamp_request($1,'god')", [wellnessRequest]);
-  assert.equal(await wellnessGrant(), 4);
-  await as(admin, "select unstamp_request($1,'god')", [wellnessRequest]);
-  assert.equal(await wellnessGrant(), 2);
-  await assert.rejects(
-    as(admin, "select deny_request($1,' ')", [wellnessRequest]),
-    /reason is required/,
-  );
-});
-test("a wellness approval cannot be undone after its days are booked", async () => {
-  await as(admin, "select stamp_request($1,'god')", [wellnessRequest]);
-  const days = (
-    await as(
-      admin,
-      "select d::date::text as day from generate_series(current_date+30,current_date+45,interval '1 day') d where extract(dow from d) between 1 and 5 order by d limit 3",
-    )
-  ).rows.map((r) => ({ type_id: wellness, start: r.day, end: r.day }));
-  const booking = (
-    await as(employee, "select submit_request(null,$1::jsonb) id", [
-      JSON.stringify(days),
-    ])
-  ).rows[0].id;
-  await as(lead, "select stamp_request($1,'team')", [booking]);
-  await as(admin, "select stamp_request($1,'god')", [booking]);
-  await assert.rejects(
-    as(admin, "select unstamp_request($1,'god')", [wellnessRequest]),
-    /already booked/,
-  );
-  assert.equal(await wellnessGrant(), 4);
 });
 // Runs as the table owner, below the procedures, so a trigger's own check is what gets tested.
 async function asOwner(sql, args = []) {
@@ -740,29 +685,6 @@ test("a denial is lifted by the admin who made it, or by a god admin", async () 
     /no stamp to remove|did not deny/,
   );
 });
-// A wellness grant has no dated lines, so there is no first day off for the window to close on. It
-// stays open; what bounds it is the grant trigger, which will not pull days back below the ones
-// already booked.
-test("a denied wellness grant has no window to miss", async () => {
-  const id = (
-    await as(fEmp, "select submit_wellness_request(2,$1) id", ["Recharge"])
-  ).rows[0].id;
-  await as(fLead, "select deny_request($1,'Not this quarter')", [id]);
-  assert.equal(
-    (await as(fLead, "select decision_window_open($1) ok", [id])).rows[0].ok,
-    true,
-  );
-  await db.exec(
-    `reset role;update requests set decided_at = now() - interval '40 days' where id = '${id}'`,
-  );
-  await as(fLead, "select unstamp_request($1,'team')", [id]);
-  assert.equal(
-    (await as(fLead, "select status from requests where id=$1", [id])).rows[0]
-      .status,
-    "pending",
-  );
-});
-
 // HR booking on someone's behalf. Its own cast: an HR user, an employee with a manager, a new
 // hire who has never signed in and has no team, and an inactive account.
 const hHr = "00000000-0000-0000-0000-0000000000b1",
@@ -982,12 +904,14 @@ test("the internal file-as-someone functions are not callable from the browser",
 const lyType = "00000000-0000-0000-0000-0000000000c1";
 const one = async (sql, args = []) => (await asOwner(sql, args)).rows[0];
 test("Vacation keeps its current allowance until its first Oct 1 reset in 2027", async () => {
-  // The migration's Vacation update ran before this file's data existed. Running it again sets it,
-  // and shows the migration is safe to re-run.
+  // The migration's Vacation update ran before this file's data existed, so run that statement
+  // again. (The whole file no longer re-runs: 202610130001 dropped the columns its old
+  // grant_amount() body reads.)
   await db.exec("reset role");
-  await db.exec(
-    fs.readFileSync("supabase/migrations/202609280002_leave_year_reset.sql", "utf8"),
-  );
+  const vacationUpdate = fs
+    .readFileSync("supabase/migrations/202609280002_leave_year_reset.sql", "utf8")
+    .match(/update public\.pto_types\nset reset_month = 10[^;]*;/)[0];
+  await db.exec(vacationUpdate);
   const vac = await one(
     "select reset_month, reset_day, first_reset::text from pto_types where id=$1",
     [type],
@@ -1032,7 +956,7 @@ test("a request crossing a reset day is charged to each leave year it touches", 
     /Reset Test balance is short for Hana for Mar 1, 2030 – Feb 28, 2031\. This needs 2 day\(s\) but only 1 remain/,
   );
 });
-test("a new leave year starts from the person's last amount, without Wellness Day top-ups", async () => {
+test("a new leave year starts from the person's last amount", async () => {
   await asOwner(
     `insert into pto_grants(user_id,pto_type_id,leave_year,amount) values('${hEmp}','${lyType}',2029,7)`,
   );
@@ -1044,20 +968,6 @@ test("a new leave year starts from the person's last amount, without Wellness Da
   assert.equal(
     (await one("select grant_amount($1,$2,2031) n", [hLead, lyType])).n,
     3,
-  );
-  // A Wellness Day top-up adds to this leave year only.
-  const year = (await one("select leave_year_for($1,current_date) y", [wellness])).y;
-  const id = (
-    await as(hEmp, "select submit_wellness_request(3,$1) id", ["Recharge"])
-  ).rows[0].id;
-  await as(hLead, "select stamp_request($1,'team')", [id]);
-  await as(hHr, "select stamp_request($1,'god')", [id]);
-  assert.deepEqual(
-    await one(
-      "select grant_amount($1,$2,$3) this_year, grant_amount($1,$2,$3+1) next_year",
-      [hEmp, wellness, year],
-    ),
-    { this_year: 5, next_year: 2 },
   );
 });
 test("allowances are readable by the person, their managers and HR only", async () => {

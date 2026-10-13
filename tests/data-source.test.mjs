@@ -216,18 +216,11 @@ test("request reads survive request_stamp_facts being unavailable", async () => 
 test("stamping and denying go through the two-stamp procedures", async () => {
   const api = client({
     requests: [
-      {
-        id: "w",
-        requester_id: "other",
-        request_lines: [],
-        status: "pending",
-        kind: "wellness_grant",
-      },
+      { id: "w", requester_id: "other", request_lines: [], status: "pending" },
       { id: "t", requester_id: "other", request_lines: [], status: "pending" },
     ],
   });
   const source = createSupabaseDataSource(api);
-  // The same procedures serve time off and wellness grants.
   await source.stampRequest("w", "god");
   await source.stampRequest("t", "team", true);
   await source.unstampRequest("t", "team");

@@ -20,7 +20,6 @@ import { BalanceCards } from "../components/requests/BalanceCards.jsx";
 import { EmptyState } from "../components/ui/EmptyState.jsx";
 import { CalendarX as Vendor_CalendarX } from "lucide-react";
 import { requestPrimaryTypeId } from "../utils/requestHelpers.jsx";
-import { isWellnessGrant } from "../utils/requestHelpers.jsx";
 import { PtoTypeIcon } from "../components/ui/PtoTypeIcon.jsx";
 import { requestTypeLabel } from "../utils/requestHelpers.jsx";
 import { requestRangeLabel } from "../utils/requestHelpers.jsx";
@@ -180,9 +179,7 @@ export function Profile() {
                       </p>
                     </div>
                     <span className="text-xs text-ink-mute tabular">
-                      {isWellnessGrant(x)
-                        ? `+${x.grantDays}`
-                        : requestDays(x, normalDaysOff)}
+                      {requestDays(x, normalDaysOff)}
                       {"d"}
                     </span>
                     <StatusChip status={x.status} size="xs" />

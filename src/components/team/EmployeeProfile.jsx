@@ -33,7 +33,6 @@ import { CalendarClock as Vendor_CalendarClock } from "lucide-react";
 import { ArrowUpRight as Vendor_ArrowUpRight } from "lucide-react";
 import { requestLines } from "../../utils/requestHelpers.jsx";
 import { requestPrimaryTypeId } from "../../utils/requestHelpers.jsx";
-import { isWellnessGrant } from "../../utils/requestHelpers.jsx";
 import { requestDays } from "../../utils/requestHelpers.jsx";
 import { PtoTypeIcon } from "../ui/PtoTypeIcon.jsx";
 import { requestTypeLabel } from "../../utils/requestHelpers.jsx";
@@ -934,7 +933,7 @@ export function PersonHistoryRow({
           {requestRangeLabel(e)}
           {" · "}
           <span className="text-ink-soft">
-            {isWellnessGrant(e) ? `+${e.grantDays}` : u}
+            {u}
             {"d"}
           </span>
           {showReason && e.note && e.status !== "denied" ? (

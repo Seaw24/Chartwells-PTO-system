@@ -14,22 +14,11 @@ import { timeAgo } from "../../utils/dateHelpers.jsx";
 import { firstName } from "../../utils/constants.jsx";
 import { Button } from "../ui/Button.jsx";
 import { StampSlots } from "./StampSlots.jsx";
-import { isWellnessGrant } from "../../utils/requestHelpers.jsx";
-import { WellnessPill } from "./Wellness.jsx";
-import { wellnessCardStyle } from "./Wellness.jsx";
-import { wellnessDividerStyle } from "./Wellness.jsx";
 import { useHolidayIssue } from "./HolidayDayOff.jsx";
 import { HolidayIssueNotice } from "./HolidayDayOff.jsx";
 import { holidayIssueCardStyle } from "./HolidayDayOff.jsx";
 import { holidayIssueDividerStyle } from "./HolidayDayOff.jsx";
-export function RequestCard(e) {
-  return isWellnessGrant(e.request) ? (
-    <WellnessRequestCard {...e} />
-  ) : (
-    <TimeOffRequestCard {...e} />
-  );
-}
-export function TimeOffRequestCard({ request: request, onCancel: onCancel }) {
+export function RequestCard({ request: request, onCancel: onCancel }) {
   var p;
   const {
       ptoTypes: ptoTypes,
@@ -174,84 +163,5 @@ export function TimeOffRequestCard({ request: request, onCancel: onCancel }) {
         )}
       </div>
     )
-  );
-}
-export function WellnessRequestCard({ request: request, onCancel: onCancel }) {
-  const { userById: userById, ptoTypeById: ptoTypeById } = useCatalog(),
-    today = useToday(),
-    decider =
-      request.decidedByName ?? userById(request.decidedBy)?.name ?? null,
-    typeName = ptoTypeById(request.grantTypeId)?.name ?? "Wellness Day",
-    days = request.grantDays;
-  return (
-    <div
-      className="lift flex h-full flex-col rounded-card border p-5 shadow-card"
-      style={wellnessCardStyle}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <WellnessPill />
-        <StatusChip status={request.status} size="xs" />
-      </div>
-      <p className="mt-3 text-[15px] font-semibold text-ink">
-        <span className="tabular">
-          {"+"}
-          {days}
-          {days === 1 ? " day" : " days"}
-        </span>
-        <span className="font-medium text-ink-mute">
-          {" to your "}
-          {typeName}
-          {" balance"}
-        </span>
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-mute">
-        <span
-          className={`font-semibold ${request.status === "approved" ? "text-success-ink" : "text-ink-soft"}`}
-        >
-          {request.status === "approved"
-            ? "Added to your balance"
-            : `For ${request.grantYear}`}
-        </span>
-        <span>
-          {"Submitted "}
-          {timeAgo(request.submittedAt, today)}
-        </span>
-        {decider && request.decidedAt && (
-          <span>
-            {request.status === "approved" ? "Approved" : "Denied"}
-            {" by "}
-            {firstName(decider)}
-          </span>
-        )}
-      </div>
-      {request.status === "denied" && request.denialReason && (
-        <p className="mt-3 rounded-btn bg-danger-soft px-3 py-2 text-xs text-danger-ink">
-          <span className="font-semibold">{"Reason:"}</span>{" "}
-          {request.denialReason}
-        </p>
-      )}
-      {request.note && (
-        <p
-          className="mt-3 rounded-btn px-3 py-2 text-xs italic text-ink-soft"
-          style={{
-            background: "var(--c-card)",
-          }}
-        >
-          {"“"}
-          {request.note}
-          {"”"}
-        </p>
-      )}
-      {request.status === "pending" && onCancel && (
-        <div
-          className="mt-auto flex justify-end border-t pt-3.5"
-          style={wellnessDividerStyle}
-        >
-          <Button variant="outline" size="sm" onClick={() => onCancel(request)}>
-            {"Cancel request"}
-          </Button>
-        </div>
-      )}
-    </div>
   );
 }

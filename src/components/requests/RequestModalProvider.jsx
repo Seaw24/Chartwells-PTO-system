@@ -1,7 +1,6 @@
 import React from "react";
 import { Modal } from "../ui/Modal.jsx";
 import { RequestForm } from "./RequestForm.jsx";
-import { WellnessRequestForm } from "./WellnessRequestForm.jsx";
 export const RequestModalContext = React.createContext(null);
 export function RequestModalProvider({ children: children }) {
   const [t, n] = React.useState({
@@ -23,31 +22,16 @@ export function RequestModalProvider({ children: children }) {
           prefill: {},
         }),
       [],
-    ),
-    [wellnessOpen, setWellnessOpen] = React.useState(!1),
-    openWellnessRequest = React.useCallback(() => setWellnessOpen(!0), []),
-    closeWellness = React.useCallback(() => setWellnessOpen(!1), []);
+    );
   return (
     <RequestModalContext.Provider
       value={{
         openRequest: r,
-        openWellnessRequest: openWellnessRequest,
       }}
     >
       {children}
       <Modal open={t.open} onClose={s} title="Request time off" size="lg">
         <RequestForm prefill={t.prefill} onSubmitted={s} onCancel={s} />
-      </Modal>
-      <Modal
-        open={wellnessOpen}
-        onClose={closeWellness}
-        title="Request wellness day off"
-        size="md"
-      >
-        <WellnessRequestForm
-          onSubmitted={closeWellness}
-          onCancel={closeWellness}
-        />
       </Modal>
     </RequestModalContext.Provider>
   );

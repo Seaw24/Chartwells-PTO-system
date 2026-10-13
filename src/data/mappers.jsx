@@ -34,10 +34,6 @@ export const mapRequest = (e) => ({
     },
   },
   deniedSlot: e.denied_slot ?? null,
-  kind: e.kind ?? "time_off",
-  grantTypeId: e.grant_type_id ?? null,
-  grantDays: e.grant_days ?? null,
-  grantYear: e.grant_year ?? null,
 });
 // request_stamp_facts() answers the two questions a viewer's own roster cannot: whether anybody
 // can fill each slot, and the names behind the stamps. It is merged in rather than passed to
@@ -108,7 +104,6 @@ export const mapPtoType = (e) => ({
   restrictedDates: e.requires_window,
   allowBackdate: e.allow_backdate,
   isActive: e.is_active,
-  isWellness: !!e.is_wellness,
   isHolidayDayOff: !!e.is_holiday_day_off,
   // When the yearly allowance resets, and the first reset under that rule (see leaveYear.jsx).
   resetMonth: e.reset_month ?? 1,

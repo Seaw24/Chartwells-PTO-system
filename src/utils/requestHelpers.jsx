@@ -18,16 +18,9 @@ export function requestLines(e = {}) {
         ]
       : [];
 }
-// Wellness grant requests add days to a balance and have no dated lines.
-export const isWellnessGrant = (e) =>
-  (e == null ? void 0 : e.kind) === "wellness_grant";
 export function requestPrimaryTypeId(e) {
   var t;
-  return isWellnessGrant(e)
-    ? e.grantTypeId
-    : (t = requestLines(e)[0]) == null
-      ? void 0
-      : t.type;
+  return (t = requestLines(e)[0]) == null ? void 0 : t.type;
 }
 export function requestStart(e) {
   const t = requestLines(e)
@@ -56,7 +49,6 @@ export function requestDays(e, t = DEFAULT_NORMAL_DAYS_OFF) {
   return requestLines(e).reduce((r, s) => r + lineDays(s, t), 0);
 }
 export function requestTypeIds(e) {
-  if (isWellnessGrant(e)) return e.grantTypeId ? [e.grantTypeId] : [];
   return Array.from(
     new Set(
       requestLines(e)
@@ -100,8 +92,6 @@ export function bookedDaysByDate(e = []) {
   );
 }
 export function requestRangeLabel(e) {
-  if (isWellnessGrant(e))
-    return `+${e.grantDays} day${e.grantDays === 1 ? "" : "s"} to balance`;
   const t = requestLines(e);
   return t.length === 0
     ? ""
@@ -111,7 +101,6 @@ export function requestRangeLabel(e) {
 }
 export function requestTypeLabel(e, t = []) {
   var r;
-  if (isWellnessGrant(e)) return "Wellness day request";
   const n = requestTypeIds(e),
     // A Holiday Day Off reads as the holiday it was booked for.
     holidayName = requestLines(e).find((s) => s.holidayName)?.holidayName;
@@ -207,9 +196,7 @@ export const isOverrideStamp = (e, t, n = []) =>
     n.find((s) => s.id === t.userId),
   );
 // Is there still time for changing a decision to mean anything? Only until the first requested day
-// arrives. A wellness grant has no dated lines and so no such moment; it stays open, bounded
-// instead by the grant trigger that refuses to pull days back below the ones already booked.
-// Mirrors decision_window_open() in 202609180005_undo_denial.sql.
+// arrives. Mirrors decision_window_open() in 202609180005_undo_denial.sql.
 export const decisionWindowOpen = (e) => {
   const t = requestLines(e)
     .map((n) => n.start)

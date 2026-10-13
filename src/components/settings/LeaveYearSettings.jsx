@@ -97,7 +97,6 @@ export function LeaveYearSettings() {
               "Time off that crosses a reset day is split: each day counts against the year it falls in."
             }
           </li>
-          <li>{"Extra Wellness Days are for one year only and don’t carry over."}</li>
         </ul>
       </div>
     </div>

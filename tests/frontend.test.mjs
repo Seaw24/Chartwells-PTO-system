@@ -53,28 +53,6 @@ test("request mapper preserves private notes, line types, and decision metadata"
   assert.equal(r.lines[0].type, "v");
   assert.equal(r.denialReason, "Coverage");
 });
-test("wellness grant requests map without dates and label the days they add", () => {
-  const r = mappers.mapRequest({
-    id: "w",
-    requester_id: "u",
-    request_lines: [],
-    status: "pending",
-    kind: "wellness_grant",
-    grant_type_id: "well",
-    grant_days: 2,
-    grant_year: 2026,
-  });
-  assert.ok(helpers.isWellnessGrant(r));
-  assert.deepEqual(helpers.requestTypeIds(r), ["well"]);
-  assert.equal(helpers.requestPrimaryTypeId(r), "well");
-  assert.equal(helpers.requestDays(r), 0);
-  assert.equal(helpers.requestTypeLabel(r), "Wellness day request");
-  assert.equal(helpers.requestRangeLabel(r), "+2 days to balance");
-  assert.equal(
-    mappers.mapRequest({ id: "t", request_lines: [] }).kind,
-    "time_off",
-  );
-});
 const labor = { id: "labor", date: "2026-09-07", name: "Labor Day" },
   dayOffType = { id: "hd", name: "Holiday Day Off", isHolidayDayOff: true },
   dayOff = (start, end = start) => ({
@@ -583,17 +561,6 @@ test("the red seal is how a denial is taken back, on the same rule as a stamp", 
   assert.match(
     helpers.stampBlockedReason(f.teamAdmin, denied("ta", today), "team", f.all),
     /already started/i,
-  );
-  // A wellness grant has no dates, so it has no such moment and the window stays open. What bounds
-  // it instead is the grant trigger, which refuses to pull days back below the ones already booked.
-  assert.equal(
-    helpers.stampAction(
-      f.teamAdmin,
-      { ...denied("ta", past), lines: [] },
-      "team",
-      f.all,
-    ).mode,
-    "remove",
   );
   // A god admin, whenever — and reaching into somebody else's decision still asks first.
   assert.deepEqual(

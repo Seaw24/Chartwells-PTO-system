@@ -24,7 +24,6 @@ const types = [
   requires_window: false,
   allow_backdate: i === 1,
   is_active: true,
-  is_wellness: i === 2,
   is_holiday_day_off: i === 5,
 }));
 const users = [
@@ -100,20 +99,6 @@ const tables = {
       ],
     },
     {
-      id: "00000000-0000-0000-0000-000000000101",
-      requester_id: other,
-      status: "pending",
-      kind: "wellness_grant",
-      grant_type_id: types[2].id,
-      grant_days: 2,
-      grant_year: year,
-      note: "Recharging after the conference week",
-      submitted_at: new Date(date.getTime() - 3 * 864e5).toISOString(),
-      decided_at: null,
-      decided_by: null,
-      request_lines: [],
-    },
-    {
       id: "00000000-0000-0000-0000-000000000102",
       requester_id: other,
       status: "pending",
@@ -178,13 +163,6 @@ const authUser = {
   created_at: date.toISOString(),
 };
 let count = 200;
-// Mirrors the database trigger: wellness grant approvals move the wellness balance.
-const adjustWellnessGrant = (r, sign) => {
-  if (r?.kind !== "wellness_grant") return;
-  tables.pto_grants.find(
-    (g) => g.user_id === r.requester_id && g.pto_type_id === r.grant_type_id,
-  ).amount += sign * r.grant_days;
-};
 http
   .createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -267,24 +245,6 @@ http
             start_date: l.start,
             end_date: l.end,
           })),
-        });
-        return send(id);
-      }
-      if (method === "submit_wellness_request") {
-        const id = `00000000-0000-0000-0000-${String(count++).padStart(12, "0")}`;
-        tables.requests.unshift({
-          id,
-          requester_id: uid,
-          status: "pending",
-          kind: "wellness_grant",
-          grant_type_id: types[2].id,
-          grant_days: body.p_days,
-          grant_year: year,
-          note: body.p_note,
-          submitted_at: new Date().toISOString(),
-          decided_at: null,
-          decided_by: null,
-          request_lines: [],
         });
         return send(id);
       }
@@ -372,7 +332,7 @@ http
         });
         return send(id);
       }
-      if (method === "decide_request" || method === "decide_wellness_request") {
+      if (method === "decide_request") {
         if (!r || r.status !== "pending")
           return send({ message: "This request has already changed." }, 400);
         // Mirrors the database trigger: a stale Holiday Day Off cannot be approved.
@@ -399,7 +359,6 @@ http
         r.decided_at = new Date().toISOString();
         r.decided_by = uid;
         r.denial_reason = body.p_reason;
-        if (body.p_approve) adjustWellnessGrant(r, 1);
         return send(null);
       }
       if (method === "cancel_request") {
@@ -412,7 +371,6 @@ http
         return send(null);
       }
       if (method === "undo_decision") {
-        if (r.status === "approved") adjustWellnessGrant(r, -1);
         r.status = "pending";
         r.decided_at = null;
         return send(null);
