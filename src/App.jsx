@@ -1,6 +1,7 @@
 import React from "react";
 import { useAuth } from "./context/AuthContext.jsx";
 import { Navigate as Vendor_Navigate } from "react-router-dom";
+import { useLocation as Vendor_useLocation } from "react-router-dom";
 import { Welcome } from "./pages/Welcome.jsx";
 import { useCurrentUser } from "./context/AuthContext.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
@@ -28,7 +29,8 @@ export const Loading = () => (
   <div className="p-6 text-sm text-ink-mute">{"Loading…"}</div>
 );
 export function AuthGuard({ children: children }) {
-  const { user: user, loading: loading } = useAuth();
+  const { user: user, loading: loading } = useAuth(),
+    location = Vendor_useLocation();
   return loading ? (
     <div className="grid min-h-screen place-items-center bg-surface text-sm text-ink-mute">
       {"Loading…"}
@@ -40,7 +42,11 @@ export function AuthGuard({ children: children }) {
       children
     )
   ) : (
-    <Vendor_Navigate to="/login" replace={!0} />
+    <Vendor_Navigate
+      to="/login"
+      replace={!0}
+      state={{ from: location.pathname + location.search }}
+    />
   );
 }
 export function WelcomeRoute() {

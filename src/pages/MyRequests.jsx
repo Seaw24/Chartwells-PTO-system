@@ -18,6 +18,8 @@ import { CardSkeleton } from "../components/ui/Skeleton.jsx";
 import { EmptyState } from "../components/ui/EmptyState.jsx";
 import { CalendarRange as Vendor_CalendarRange } from "lucide-react";
 import { RequestCard } from "../components/requests/RequestCard.jsx";
+import { useSearchParams as Vendor_useSearchParams } from "react-router-dom";
+import { RequestDetailModal } from "../components/requests/RequestDetailModal.jsx";
 export const REQUEST_TABS = [
   {
     value: "all",
@@ -125,12 +127,21 @@ export function MyRequests() {
     l = useVersion(),
     u = useBumpVersion(),
     [h, d] = React.useState("recent"),
-    [f, p] = React.useState(null);
+    [f, p] = React.useState(null),
+    [detailId, setDetailId] = React.useState(null),
+    [searchParams, setSearchParams] = Vendor_useSearchParams();
   const { data: y = null } = useResource(
     ["my-requests"],
     () => requestsForUser(e.id),
     true,
   );
+  // A link from an email (?req=) opens that request.
+  React.useEffect(() => {
+    const id = searchParams.get("req");
+    if (!id) return;
+    setDetailId(id);
+    setSearchParams({}, { replace: !0 });
+  }, [searchParams, setSearchParams]);
   void 0;
   const k = React.useMemo(() => requestCounts(y ?? [], t), [y, t]),
     v = React.useMemo(
@@ -256,6 +267,12 @@ export function MyRequests() {
           ))}
         </div>
       )}
+      <RequestDetailModal
+        requestId={detailId}
+        open={!!detailId}
+        onClose={() => setDetailId(null)}
+        onChanged={u}
+      />
       <ConfirmDialog
         open={!!f}
         onClose={() => p(null)}
