@@ -142,6 +142,34 @@ test("a rolled-back submit sends nothing", async () => {
   await db.exec("rollback");
   assert.deepEqual(await calls(), []);
 });
+test("a call is only made when the transaction commits", async () => {
+  await clearCalls();
+  await db.exec("begin");
+  await submit(employee, days[7]);
+  // calls() does `reset role` and a select; both are fine to run inside the still-open
+  // transaction, and nothing has been sent yet because the deferred trigger hasn't fired.
+  assert.deepEqual(await calls(), []);
+  await db.exec("commit");
+  assert.equal((await calls()).length, 1);
+});
+test("an HR booking sends the submit and both stamps as one call, already approved", async () => {
+  await clearCalls();
+  const booked = (
+    await as(hr, "select book_requests_for($1,$2::jsonb) ids", [
+      employee,
+      JSON.stringify([{ type_id: type, start: days[8], end: days[8] }]),
+    ])
+  ).rows[0].ids;
+  const [id] = booked;
+  const sent = await calls();
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].body.events, [
+    { kind: "submitted", request_id: id },
+    { kind: "stamped", request_id: id, slot: "team", override: true, actor: hr },
+    { kind: "stamped", request_id: id, slot: "god", override: false, actor: hr },
+  ]);
+  assert.equal(await statusOf(id), "approved");
+});
 test("a failing call never blocks the action", async () => {
   await asOwner(NET_HTTP_POST_FAILING);
   try {
