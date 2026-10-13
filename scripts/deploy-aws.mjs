@@ -137,8 +137,9 @@ if (deployFunction) {
       "set -eu",
       `chmod 755 '${staging}'`,
       `chmod 644 '${staging}'/*`,
-      `if [ -e '${target}' ]; then mv '${target}' '${backup}'; fi`,
-      `mv '${staging}' '${target}'`,
+      // Move the old folder aside, then the new one in; if that second move fails, put the old
+      // folder straight back so the function is never left missing.
+      `if [ -e '${target}' ]; then mv '${target}' '${backup}'; fi; if ! mv '${staging}' '${target}'; then [ -e '${backup}' ] && mv '${backup}' '${target}'; exit 1; fi`,
     ]);
     console.log(`Edge Function ${name} deployed. Server backup: ${backup}`);
   }
