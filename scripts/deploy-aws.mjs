@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const account = "836548369971";
@@ -9,8 +9,18 @@ const bucket = `chartwells-pto-app-${account}`;
 const distribution = "E28QGWFC6YNZD5";
 const domain = "d2hxxrhfzq1k3r.cloudfront.net";
 const instance = "i-0ab29bf3040dc6657";
-const functionPath =
-  "/opt/chartwells/chartwells-supabase/volumes/functions/employee-access/index.ts";
+const functionsRoot = "/opt/chartwells/chartwells-supabase/volumes/functions";
+// Outside functionsRoot: every folder in there is served as a function.
+const backupRoot = "/opt/chartwells/function-backups";
+const onlyFunction = process.argv
+  .find((arg) => arg.startsWith("--function="))
+  ?.slice("--function=".length);
+const functionNames = ["employee-access", "notify"].filter(
+  (name) => !onlyFunction || name === onlyFunction,
+);
+if (onlyFunction && functionNames.length === 0) {
+  throw new Error(`Unknown function: ${onlyFunction}`);
+}
 const dryRun = process.argv.includes("--dry-run");
 const frontendOnly = process.argv.includes("--frontend-only");
 const functionOnly = process.argv.includes("--function-only");
@@ -65,6 +75,18 @@ function waitForCommand(commandId) {
   throw new Error("Timed out waiting for the Edge Function deployment.");
 }
 
+function ssm(commands) {
+  const commandId = aws(
+    "ssm", "send-command",
+    "--instance-ids", instance,
+    "--document-name", "AWS-RunShellScript",
+    "--parameters", JSON.stringify({ commands }),
+    "--query", "Command.CommandId",
+    "--output", "text",
+  );
+  return waitForCommand(commandId);
+}
+
 const signedInAccount = aws("sts", "get-caller-identity", "--query", "Account", "--output", "text");
 if (signedInAccount !== account) {
   throw new Error(`AWS is signed in to ${signedInAccount}; expected ${account}.`);
@@ -95,31 +117,33 @@ if (dryRun) {
 }
 
 if (deployFunction) {
-  const source = readFileSync(resolve("supabase/functions/employee-access/index.ts"));
-  const encoded = source.toString("base64");
-  const sha = createHash("sha256").update(source).digest("hex");
-  const backup = `${functionPath}.bak-${stamp}`;
-  const temp = `${functionPath}.next-${stamp}`;
-  const commands = [
-    "set -eu",
-    `cp '${functionPath}' '${backup}'`,
-    `printf '%s' '${encoded}' | base64 -d > '${temp}'`,
-    `echo '${sha}  ${temp}' | sha256sum -c -`,
-    `chmod 644 '${temp}'`,
-    `mv '${temp}' '${functionPath}'`,
-    "docker restart supabase-edge-functions >/dev/null",
-    `echo '${sha}  ${functionPath}' | sha256sum -c -`,
-  ];
-  const commandId = aws(
-    "ssm", "send-command",
-    "--instance-ids", instance,
-    "--document-name", "AWS-RunShellScript",
-    "--parameters", JSON.stringify({ commands }),
-    "--query", "Command.CommandId",
-    "--output", "text",
-  );
-  console.log(waitForCommand(commandId));
-  console.log(`Edge Function deployed. Server backup: ${backup}`);
+  for (const name of functionNames) {
+    const dir = resolve("supabase/functions", name);
+    const target = `${functionsRoot}/${name}`;
+    const backup = `${backupRoot}/${stamp}/${name}`;
+    const staging = `${backupRoot}/${stamp}/${name}.next`;
+    ssm(["set -eu", `mkdir -p '${staging}'`]);
+    // One command per file keeps each SSM call well under its parameter size limit.
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts")).sort()) {
+      const source = readFileSync(resolve(dir, file));
+      const sha = createHash("sha256").update(source).digest("hex");
+      ssm([
+        "set -eu",
+        `printf '%s' '${source.toString("base64")}' | base64 -d > '${staging}/${file}'`,
+        `echo '${sha}  ${staging}/${file}' | sha256sum -c - >/dev/null`,
+      ]);
+    }
+    ssm([
+      "set -eu",
+      `chmod 755 '${staging}'`,
+      `chmod 644 '${staging}'/*`,
+      `if [ -e '${target}' ]; then mv '${target}' '${backup}'; fi`,
+      `mv '${staging}' '${target}'`,
+    ]);
+    console.log(`Edge Function ${name} deployed. Server backup: ${backup}`);
+  }
+  ssm(["set -eu", "docker restart supabase-edge-functions >/dev/null"]);
+  console.log("Edge Functions restarted.");
 }
 
 if (deployFrontend) {
