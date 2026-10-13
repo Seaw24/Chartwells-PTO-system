@@ -64,6 +64,7 @@ import {
   approversFor,
   planEmails,
   sampleEmails,
+  parseIdList,
 } from "../supabase/functions/notify/plan.ts";
 
 const APP = "https://pto.example.test/";
@@ -230,4 +231,47 @@ test("samples cover every email and go to one address", () => {
   assert.equal(emails.length, 6);
   assert.ok(emails.every((e) => e.to === "owner@example.test"));
   assert.equal(emails[0].subject, "New time off request from Emery Stone");
+});
+
+test("parseIdList trims, drops empties, and nothing listed is null", () => {
+  assert.equal(parseIdList(undefined), null);
+  assert.equal(parseIdList(""), null);
+  assert.equal(parseIdList(" , "), null);
+  assert.deepEqual(parseIdList(" a, b ,,c "), new Set(["a", "b", "c"]));
+});
+test("an HR allowlist narrows who gets new-request emails as HR, but not as Manager", () => {
+  assert.deepEqual(approversFor("emp", snap(), new Set(["nobody"])).map((p) => p.id), ["mgr"]);
+  assert.deepEqual(
+    approversFor("emp", snap(), new Set(["hr"])).map((p) => p.id).sort(),
+    ["hr", "mgr"],
+  );
+  assert.deepEqual(approversFor("emp", snap(), null).map((p) => p.id).sort(), ["hr", "mgr"]);
+});
+test("an HR user who also manages the requester's team still gets it, allowlist or not", () => {
+  const withHrAsManager = {
+    ...snap(request()),
+    memberships: [...memberships, { team_id: "dining", user_id: "hr", role: "admin" }],
+  };
+  assert.deepEqual(
+    approversFor("emp", withHrAsManager, new Set(["nobody"])).map((p) => p.id).sort(),
+    ["hr", "mgr"],
+  );
+});
+test("planEmails passes the allowlist through to new-request emails", () => {
+  const emails = planEmails(
+    [{ kind: "submitted", request_id: "r1" }],
+    snap(request()),
+    APP,
+    { hrIds: new Set(["nobody"]) },
+  );
+  assert.deepEqual(emails.map((e) => e.to), ["mgr@example.test"]);
+});
+test("decision emails ignore the allowlist", () => {
+  const [email] = planEmails(
+    [{ kind: "stamped", request_id: "r1", slot: "team", override: false, actor: "mgr" }],
+    snap(request()),
+    APP,
+    { hrIds: new Set(["nobody"]) },
+  );
+  assert.equal(email.to, "emp@example.test");
 });

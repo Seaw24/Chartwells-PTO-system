@@ -1,7 +1,7 @@
 // Called by the database (pg_net) when a request is submitted or decided. This function is reachable
 // through CloudFront and the runtime does not check JWTs, so the shared secret is the only gate.
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { planEmails, sampleEmails } from "./plan.ts";
+import { parseIdList, planEmails, sampleEmails } from "./plan.ts";
 import type { NotifyEvent } from "./plan.ts";
 import { sendAll } from "./send.ts";
 
@@ -60,6 +60,7 @@ Deno.serve(async (req) => {
     for (const result of [requests, people, memberships, types]) {
       if (result.error) throw result.error;
     }
+    const hrIds = parseIdList(Deno.env.get("NOTIFY_HR_IDS"));
     const emails = planEmails(
       events,
       {
@@ -69,6 +70,7 @@ Deno.serve(async (req) => {
         types: types.data ?? [],
       },
       appUrl,
+      { hrIds },
     );
     const result = await sendAll(emails);
     console.log(`notify: ${events.length} events, ${result.sent} sent, ${result.failed} failed`);

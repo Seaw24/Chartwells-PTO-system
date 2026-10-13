@@ -68,9 +68,14 @@ export function describeRequest(r: RequestRow, types: PtoType[]): string {
   return parts.join("; ") || "Time off";
 }
 
-// Who can approve this person's requests: active Managers of any team they are in, plus every
-// active HR user. Never the person themselves.
-export function approversFor(requesterId: string, snapshot: Snapshot): Person[] {
+// Who can approve this person's requests: active Managers of any team they are in, plus active HR.
+// Never the person themselves. hrIds, when given, limits the HR half to the listed ids; a Manager
+// who happens to also be HR still gets the email as a Manager even when left off that list.
+export function approversFor(
+  requesterId: string,
+  snapshot: Snapshot,
+  hrIds?: ReadonlySet<string> | null,
+): Person[] {
   const teams = new Set(
     snapshot.memberships.filter((m) => m.user_id === requesterId).map((m) => m.team_id),
   );
@@ -84,8 +89,18 @@ export function approversFor(requesterId: string, snapshot: Snapshot): Person[] 
       p.is_active &&
       !!p.email &&
       p.id !== requesterId &&
-      (p.org_role === "god_admin" || managers.has(p.id)),
+      (managers.has(p.id) || (p.org_role === "god_admin" && (!hrIds || hrIds.has(p.id)))),
   );
+}
+
+// Parses NOTIFY_HR_IDS: comma-separated UUIDs, whitespace and empty entries ignored. Nothing
+// listed (unset, empty, or only separators) means "no allowlist", not "allow nobody".
+export function parseIdList(raw: string | undefined): Set<string> | null {
+  const ids = (raw ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  return ids.length > 0 ? new Set(ids) : null;
 }
 
 // A stamp's role comes from its slot (an override is HR filling the Manager slot); a denial's from
@@ -113,6 +128,7 @@ export function planEmails(
   events: NotifyEvent[],
   snapshot: Snapshot,
   appUrl: string,
+  options?: { hrIds?: ReadonlySet<string> | null },
 ): OutgoingEmail[] {
   const base = appUrl.replace(/\/+$/, "");
   const requests = new Map(snapshot.requests.map((r) => [r.id, r]));
@@ -135,7 +151,7 @@ export function planEmails(
       requesterName: requester.name,
       link: `${base}/approvals?q=${encodeURIComponent(requester.name)}`,
     });
-    for (const approver of approversFor(requesterId, snapshot)) {
+    for (const approver of approversFor(requesterId, snapshot, options?.hrIds)) {
       emails.push({ to: approver.email as string, ...content });
     }
   }
