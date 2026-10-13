@@ -176,9 +176,12 @@ export function Approvals() {
   );
   (void 0,
     React.useEffect(() => {
-      const F = D.get("req");
-      F &&
-        (C(F),
+      // Links from emails: ?req= opens one request, ?q= fills the search with a requester's name.
+      const F = D.get("req"),
+        se = D.get("q");
+      if (!F && se === null) return;
+      (F && C(F),
+        se !== null && _(se),
         q(
           {},
           {

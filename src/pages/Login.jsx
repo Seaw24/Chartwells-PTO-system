@@ -1,4 +1,6 @@
 import { useNavigate as Vendor_useNavigate } from "react-router-dom";
+import { useLocation as Vendor_useLocation } from "react-router-dom";
+import { safeReturnPath } from "../utils/returnPath.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import React from "react";
 import { CalendarDays as Vendor_CalendarDays } from "lucide-react";
@@ -9,6 +11,7 @@ import { Button } from "../components/ui/Button.jsx";
 import { ArrowRight as Vendor_ArrowRight } from "lucide-react";
 export function Login() {
   const e = Vendor_useNavigate(),
+    location = Vendor_useLocation(),
     { user: user, signIn: signIn, error: error } = useAuth(),
     [s, i] = React.useState(""),
     [o, c] = React.useState(""),
@@ -17,10 +20,15 @@ export function Login() {
     [f, p] = React.useState(null);
   React.useEffect(() => {
     user &&
-      e(user.passwordSetupRequired ? "/welcome" : "/", {
-        replace: !0,
-      });
-  }, [user, e]);
+      e(
+        user.passwordSetupRequired
+          ? "/welcome"
+          : safeReturnPath(location.state?.from),
+        {
+          replace: !0,
+        },
+      );
+  }, [user, e, location.state]);
   async function y(g) {
     if ((g.preventDefault(), p(null), !s.trim() || !o)) {
       p("Enter your email and password.");

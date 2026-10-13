@@ -737,3 +737,14 @@ test("allowance reads pick the leave year of the date asked about", async () => 
     args: { p_user_id: "u", p_type_id: "vac", p_leave_year: 2027, p_amount: 15 },
   });
 });
+test("sign-in only returns to paths inside the app", async () => {
+  const { safeReturnPath } = await server.ssrLoadModule("/src/utils/returnPath.jsx");
+  assert.equal(safeReturnPath("/approvals?q=Emery%20Stone"), "/approvals?q=Emery%20Stone");
+  assert.equal(safeReturnPath("/requests?req=abc"), "/requests?req=abc");
+  assert.equal(safeReturnPath("//evil.example/x"), "/");
+  assert.equal(safeReturnPath("/\\evil.example"), "/");
+  assert.equal(safeReturnPath("https://evil.example"), "/");
+  assert.equal(safeReturnPath("/login"), "/");
+  assert.equal(safeReturnPath("/welcome"), "/");
+  assert.equal(safeReturnPath(undefined), "/");
+});

@@ -1,78 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { PGlite } from "@electric-sql/pglite";
-const db = new PGlite();
-await db.exec(
-  `create schema auth;create table auth.users(id uuid primary key);create role authenticated;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`,
-);
-try {
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609080001_recovered_contract.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609140001_wellness_day_requests.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609140002_holiday_day_off.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609150001_submit_requests.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609180001_two_stamp_approval.sql",
-      "utf8",
-    ),
-  );
-  // Only needed on the deployed database, but it replaces manages_team/manages_person here too,
-  // which is how we know the rewritten bodies answer the same as the bootstrap's.
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609180003_employee_access_helpers.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609180004_stamp_visibility.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync("supabase/migrations/202609180005_undo_denial.sql", "utf8"),
-  );
-  await db.exec(
-    fs.readFileSync("supabase/migrations/202609280001_hr_booking.sql", "utf8"),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202609280002_leave_year_reset.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
-    fs.readFileSync(
-      "supabase/migrations/202610130001_remove_wellness_requests.sql",
-      "utf8",
-    ),
-  );
-} catch (error) {
-  console.error(error.message, error.position);
-  process.exit(1);
-}
+import { bootDatabase } from "./helpers/db.mjs";
+const db = await bootDatabase();
 const admin = "00000000-0000-0000-0000-000000000001",
   employee = "00000000-0000-0000-0000-000000000002",
   other = "00000000-0000-0000-0000-000000000003",

@@ -42,3 +42,19 @@ Only the labels changed, on 2026-09-28. SQL names such as `is_god_admin()` and t
 `migrations/202609140002_holiday_day_off.sql` stops treating holidays as free days. Each holiday instead opens a window, from the holiday through 30 days after it, in which a person can book one working day against it through `submit_holiday_day_off`. It adds the hidden `pto_types.is_holiday_day_off` type and `request_lines.holiday_id`/`holiday_name`. Triggers keep renamed holiday names in sync and block approval of a booking whose holiday was deleted or moved.
 
 `migrations/202609150001_submit_requests.sql` adds `submit_requests`. It saves each time off from the request form as its own request, all in one transaction, and reuses `submit_request` and `submit_holiday_day_off` for the checks.
+
+## Request notification emails
+
+`migrations/202610130002_request_notifications.sql` reports every submit and decision on `requests` to the `notify` Edge Function in one `pg_net` call per transaction, at commit. The function (`functions/notify/`) emails the requester's Managers and all HR about new requests, and emails the requester when someone approves, denies, takes back an approval or undoes a denial. Who gets what is decided in `plan.ts`; the markup is in `email.ts`; `send.ts` is the only file that knows the mail provider (Gmail SMTP for now).
+
+Configuration:
+
+- Function environment (server `.env` and the `functions` service in `docker-compose.yml`): `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `EMAIL_FROM_NAME`, `APP_URL`, `NOTIFY_SECRET`. Changing the Google account password revokes the App Password.
+- `NOTIFY_HR_IDS` (optional, same two places): comma-separated `profiles.id` UUIDs. Unset or empty → every active HR user gets new-request emails, as before. Set → only the listed HR users get them; a Manager is unaffected either way, including an HR user who also manages the requester's team.
+- `NOTIFY_TEST_TO` (optional, same two places): one email address. Unset → emails go to their real recipients. Set → every planned email (not the `samples_to` check below) is redirected to that address instead, one per original email, with `[Test] ` on the subject and a banner naming who it would really have gone to.
+- Database: one row in `notification_settings` with the function URL (`http://functions:9000/notify` inside the Docker network) and the same `NOTIFY_SECRET`. No row, no calls: deleting it is the off switch.
+- Checking the design: `POST /notify` with `{"samples_to": "you@example.com"}` and the secret header sends one of each email to that address.
+
+Email is best-effort: a failed call is a warning in the database log and never undoes the action; send failures are in the edge-functions container log.
+
+Maintenance: any bulk `update` of `requests.status` or the stamp columns, while the `notification_settings` row exists, emails everyone it touches. Before running one, delete the `notification_settings` row (or `alter table public.requests disable trigger requests_collect_notifications` inside the same maintenance transaction), and restore it (or re-`enable trigger`) afterwards.
