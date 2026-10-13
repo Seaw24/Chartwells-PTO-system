@@ -16,6 +16,7 @@ export const MIGRATIONS = [
   "202609280001_hr_booking.sql",
   "202609280002_leave_year_reset.sql",
   "202610130001_remove_wellness_requests.sql",
+  "202610130002_request_notifications.sql",
 ];
 
 // Supabase Auth, reduced to what the migrations use.
