@@ -201,6 +201,15 @@ test("undoing a denial says the request is pending again", () => {
   assert.ok(email.text.includes("Morgan Lee (Manager) undid the denial of your time off."));
   assert.ok(email.text.includes("Your request is pending again."));
 });
+test("HR undoing a manager's denial is labelled by the HR account, not the slot", () => {
+  const [email] = planEmails(
+    [{ kind: "undenied", request_id: "r1", slot: "team", actor: "hr" }],
+    snap(request()),
+    APP,
+  );
+  assert.equal(email.subject, "Harper Reyes undid the denial of your time off");
+  assert.ok(email.text.includes("Harper Reyes (HR) undid the denial of your time off."));
+});
 test("an unknown actor is shown as Someone", () => {
   const [email] = planEmails(
     [{ kind: "unstamped", request_id: "r1", slot: "god", actor: null }],

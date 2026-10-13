@@ -89,9 +89,13 @@ export function approversFor(requesterId: string, snapshot: Snapshot): Person[] 
 }
 
 // A stamp's role comes from its slot (an override is HR filling the Manager slot); a denial's from
-// the slot it came from; a removed stamp's from the account of whoever removed it.
+// the slot it came from, since an HR denial is always recorded in the god slot; a removed stamp's
+// or an undone denial's from the account of whoever did the undoing, since HR can lift a denial
+// recorded in the team slot and that doesn't make them a Manager.
 function actorRole(e: NotifyEvent, actor: Person | undefined): Role {
-  if (e.kind === "unstamped") return actor?.org_role === "god_admin" ? "HR" : "Manager";
+  if (e.kind === "unstamped" || e.kind === "undenied") {
+    return actor?.org_role === "god_admin" ? "HR" : "Manager";
+  }
   if (e.kind === "stamped" && e.override) return "HR";
   return e.slot === "god" ? "HR" : "Manager";
 }
