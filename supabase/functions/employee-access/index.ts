@@ -67,6 +67,48 @@ Deno.serve(async (req) => {
       );
       return reply({ temporaryPassword });
     }
+    if (body.action === "update_details") {
+      if (!god) return reply({ error: "Only HR can edit account details." }, 403);
+      if (typeof body.userId !== "string" ||
+          typeof body.name !== "string" ||
+          typeof body.email !== "string")
+        return reply({ error: "Enter a name and valid email." }, 400);
+      const name = body.name.trim();
+      const email = body.email.trim().toLowerCase();
+      if (!name || name.length > 200 || !/^\S+@\S+\.\S+$/.test(email))
+        return reply({ error: "Enter a name and valid email." }, 400);
+      const previous = (await must(
+        admin.from("profiles").select("name,email").eq("id", body.userId).single(),
+      )) as { name: string; email: string };
+      const emailChanged = email !== previous.email.toLowerCase();
+      if (emailChanged) {
+        await must(admin.auth.admin.updateUserById(body.userId, {
+          email,
+          email_confirm: true,
+        }));
+      }
+      try {
+        await must(admin.from("profiles").update({
+          name,
+          email,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }).eq("id", body.userId).select("id").single());
+      } catch (error) {
+        if (emailChanged) {
+          try {
+            await must(admin.auth.admin.updateUserById(body.userId, {
+              email: previous.email,
+              email_confirm: true,
+            }));
+          } catch {
+            return reply({ error: "Account details could not be saved and the sign-in email could not be restored. Contact support." }, 500);
+          }
+        }
+        throw error;
+      }
+      return reply({ name, email });
+    }
     if (body.action !== "create")
       return reply({ error: "Unknown action" }, 400);
     if (!body.name?.trim() || !/^\S+@\S+\.\S+$/.test(body.email ?? ""))

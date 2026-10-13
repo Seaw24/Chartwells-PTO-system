@@ -86,6 +86,14 @@ export function SupabaseOrgProvider({ children: children }) {
       [n, r],
     ),
     p = React.useCallback((m) => n.resetTemporaryPassword(m), [n]),
+    updateDetails = React.useCallback(
+      async (id, name, email) => {
+        const details = await n.updatePersonDetails(id, name, email);
+        await r();
+        return details;
+      },
+      [n, r],
+    ),
     y = React.useCallback(
       async (m, x) => {
         (await n.setProfileOrgRole(m, x), r());
@@ -172,11 +180,12 @@ export function SupabaseOrgProvider({ children: children }) {
         setMembershipRole: d,
         addPerson: f,
         resetTemporaryPassword: p,
+        updatePersonDetails: updateDetails,
         setOrgRole: y,
         setProfileActive: g,
         removePerson: k,
       };
-    }, [t.teams, t.users, s, i, o, c, u, l, h, d, f, p, y, g, k]);
+    }, [t.teams, t.users, s, i, o, c, u, l, h, d, f, p, updateDetails, y, g, k]);
   return <OrgContext.Provider value={v}>{children}</OrgContext.Provider>;
 }
 export const OrgProvider = SupabaseOrgProvider;

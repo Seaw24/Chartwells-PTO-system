@@ -24,6 +24,20 @@ pnpm preview
 
 Deploy `dist/` with an SPA fallback to `index.html` for client routes. Set the two Vite variables at build time. No deployment or production database mutation is performed by these commands.
 
+## AWS deployment
+
+The live site is CloudFront distribution `E28QGWFC6YNZD5` in AWS account `836548369971`. Its frontend is in S3 bucket `chartwells-pto-app-836548369971`; Supabase runs on EC2 instance `i-0ab29bf3040dc6657` in `us-east-2`. The deployment script checks those targets before changing anything.
+
+With AWS CLI access and `.env.local` set to the live CloudFront Supabase URL and public anon key:
+
+```sh
+aws login
+node scripts/deploy-aws.mjs --dry-run
+node scripts/deploy-aws.mjs
+```
+
+The script runs the source check and production build, backs up the mounted `employee-access` Edge Function, installs it through Systems Manager, and restarts its container. It then backs up `index.html`, uploads hashed assets to S3, publishes the new index, and invalidates CloudFront. It keeps earlier hashed assets so cached pages continue to work. Use `--frontend-only` or `--function-only` when deploying one part. Function backups remain beside the live file on EC2; index backups are under `deploy-backups/` in S3. Database migrations are deployed separately.
+
 ## Data flow and refresh behavior
 
 `src/data/supabaseDataSource.jsx` implements the recovered table and RPC contract. `src/data/mappers.jsx` maps database rows into UI records. `src/context/AuthContext.jsx` manages sessions and clears cached data when the account changes.

@@ -31,6 +31,7 @@ const configWrites = new Set([
   "setMembershipRole",
   "setProfileOrgRole",
   "setProfileActive",
+  "updatePersonDetails",
   "provisionEmployee",
   "setNormalDaysOff",
   "setLeaveReset",

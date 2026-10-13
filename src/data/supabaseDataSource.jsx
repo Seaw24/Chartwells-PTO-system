@@ -546,6 +546,23 @@ export function createSupabaseDataSource(clientOverride = null) {
         }),
       );
     },
+    updatePersonDetails: async (userId, name, email) => {
+      const { data, error } = await client.functions.invoke("employee-access", {
+        body: { action: "update_details", userId, name, email },
+      });
+      if (error) {
+        let message = error.message;
+        try {
+          const response = await error.context?.json();
+          message = response?.error || message;
+        } catch {}
+        throw new Error(friendlyError(message, "Account details could not be saved."));
+      }
+      if (data?.error) throw new Error(data.error);
+      if (!data?.name || !data?.email)
+        throw new Error("Account details could not be confirmed. Reload and check them.");
+      return data;
+    },
     provisionEmployee: async (l) => {
       var d;
       const { data: data, error: error } = await client.functions.invoke(

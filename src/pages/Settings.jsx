@@ -1791,8 +1791,10 @@ export function PeopleSettings() {
       >
         {C && h && (
           <PersonSettingsDrawer
+            key={C.id}
             person={C}
             god={g}
+            onUpdateDetails={(name, email) => a.updatePersonDetails(C.id, name, email)}
             teams={a.teamsOf(C.id)}
             allTeams={a.teams}
             canManageTeam={N}
@@ -1981,6 +1983,7 @@ export function NormalDaysLabel({ days = [] }) {
 export function PersonSettingsDrawer({
   person: person,
   god: god,
+  onUpdateDetails: onUpdateDetails,
   teams: teams,
   allTeams: allTeams,
   canManageTeam: canManageTeam,
@@ -2000,6 +2003,7 @@ export function PersonSettingsDrawer({
   canResetPassword: canResetPassword,
   onResetPassword: onResetPassword,
 }) {
+  const toast = useToast();
   // Allowances can be set for the leave year running today or the next one; each type's years
   // follow its own reset day.
   const [grantYear, setGrantYear] = React.useState("current"),
@@ -2012,7 +2016,19 @@ export function PersonSettingsDrawer({
     D = person.orgRole === "god_admin",
     [_, b] = React.useState(!1),
     [w, T] = React.useState(!1),
-    [O, H] = React.useState(null);
+    [O, H] = React.useState(null),
+    [editingDetails, setEditingDetails] = React.useState(false),
+    [detailName, setDetailName] = React.useState(person.name),
+    [detailEmail, setDetailEmail] = React.useState(person.email);
+  async function saveDetails() {
+    try {
+      await onUpdateDetails(detailName.trim(), detailEmail.trim());
+      setEditingDetails(false);
+      toast("Account details saved.");
+    } catch (error) {
+      toast(friendlyError(error, "Account details could not be saved."), { kind: "error" });
+    }
+  }
   async function B() {
     T(!0);
     try {
@@ -2024,6 +2040,69 @@ export function PersonSettingsDrawer({
   }
   return (
     <div className="space-y-6">
+      {god && (
+        <section>
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <h3 className="eyebrow">{"Account details"}</h3>
+            {!editingDetails && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDetailName(person.name);
+                  setDetailEmail(person.email);
+                  setEditingDetails(true);
+                }}
+              >
+                <Vendor_Pencil size={14} /> Edit details
+              </Button>
+            )}
+          </div>
+          {editingDetails ? (
+            <div className="rounded-card border border-line bg-card p-4">
+              <SettingsForm
+                submitLabel="Save details"
+                canSubmit={
+                  !!detailName.trim() &&
+                  /^\S+@\S+\.\S+$/.test(detailEmail.trim()) &&
+                  (detailName.trim() !== person.name ||
+                    detailEmail.trim().toLowerCase() !== person.email.toLowerCase())
+                }
+                onSubmit={saveDetails}
+                onCancel={() => setEditingDetails(false)}
+              >
+                <SettingsField label="Name">
+                  <SettingsInput
+                    value={detailName}
+                    onChange={(event) => setDetailName(event.target.value)}
+                    required
+                    maxLength={200}
+                    autoComplete="name"
+                  />
+                </SettingsField>
+                <SettingsField label="Work email">
+                  <SettingsInput
+                    type="email"
+                    value={detailEmail}
+                    onChange={(event) => setDetailEmail(event.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                </SettingsField>
+                <p className="text-xs text-ink-mute">
+                  Changing the email changes the address used to sign in.
+                </p>
+              </SettingsForm>
+            </div>
+          ) : (
+            <div className="rounded-card border border-line bg-card p-4 text-sm">
+              <p className="font-medium text-ink">{person.name}</p>
+              <p className="mt-1 break-all text-ink-mute">{person.email}</p>
+            </div>
+          )}
+        </section>
+      )}
       <section>
         <h3 className="eyebrow mb-2.5">{"Access"}</h3>
         <div className="space-y-3.5 rounded-card border border-line bg-card p-4">
