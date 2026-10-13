@@ -51,6 +51,7 @@ Configuration:
 
 - Function environment (server `.env` and the `functions` service in `docker-compose.yml`): `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `EMAIL_FROM_NAME`, `APP_URL`, `NOTIFY_SECRET`. Changing the Google account password revokes the App Password.
 - `NOTIFY_HR_IDS` (optional, same two places): comma-separated `profiles.id` UUIDs. Unset or empty → every active HR user gets new-request emails, as before. Set → only the listed HR users get them; a Manager is unaffected either way, including an HR user who also manages the requester's team.
+- `NOTIFY_TEST_TO` (optional, same two places): one email address. Unset → emails go to their real recipients. Set → every planned email (not the `samples_to` check below) is redirected to that address instead, one per original email, with `[Test] ` on the subject and a banner naming who it would really have gone to.
 - Database: one row in `notification_settings` with the function URL (`http://functions:9000/notify` inside the Docker network) and the same `NOTIFY_SECRET`. No row, no calls: deleting it is the off switch.
 - Checking the design: `POST /notify` with `{"samples_to": "you@example.com"}` and the secret header sends one of each email to that address.
 

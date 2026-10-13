@@ -1,7 +1,7 @@
 // Called by the database (pg_net) when a request is submitted or decided. This function is reachable
 // through CloudFront and the runtime does not check JWTs, so the shared secret is the only gate.
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { parseIdList, planEmails, sampleEmails } from "./plan.ts";
+import { parseIdList, planEmails, redirectForTest, sampleEmails } from "./plan.ts";
 import type { NotifyEvent } from "./plan.ts";
 import { sendAll } from "./send.ts";
 
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
       if (result.error) throw result.error;
     }
     const hrIds = parseIdList(Deno.env.get("NOTIFY_HR_IDS"));
-    const emails = planEmails(
+    let emails = planEmails(
       events,
       {
         requests: requests.data ?? [],
@@ -72,8 +72,14 @@ Deno.serve(async (req) => {
       appUrl,
       { hrIds },
     );
+    // NOTIFY_TEST_TO: a live test run, so every email goes to one inbox instead of its real
+    // recipients. Only this path is redirected; samples_to already targets one address.
+    const testTo = Deno.env.get("NOTIFY_TEST_TO")?.trim();
+    if (testTo) emails = redirectForTest(emails, testTo);
     const result = await sendAll(emails);
-    console.log(`notify: ${events.length} events, ${result.sent} sent, ${result.failed} failed`);
+    console.log(
+      `notify: ${events.length} events, ${result.sent} sent, ${result.failed} failed${testTo ? " (test mode)" : ""}`,
+    );
     return reply(result);
   } catch (error) {
     console.error("notify failed", error);

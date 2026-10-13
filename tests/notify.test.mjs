@@ -65,6 +65,7 @@ import {
   planEmails,
   sampleEmails,
   parseIdList,
+  redirectForTest,
 } from "../supabase/functions/notify/plan.ts";
 
 const APP = "https://pto.example.test/";
@@ -274,4 +275,29 @@ test("decision emails ignore the allowlist", () => {
     { hrIds: new Set(["nobody"]) },
   );
   assert.equal(email.to, "emp@example.test");
+});
+test("redirectForTest sends every email to one inbox, saying who it was really for", () => {
+  const emails = [
+    { to: "a@x.test", subject: "Subj A", text: "Text A", html: '<html><body style="margin:0;">Body A</body></html>' },
+    { to: "b@x.test", subject: "Subj B", text: "Text B", html: "<html><body>Body B</body></html>" },
+  ];
+  const [a, b] = redirectForTest(emails, "me@x.test");
+  assert.equal(a.to, "me@x.test");
+  assert.equal(b.to, "me@x.test");
+  assert.equal(a.subject, "[Test] Subj A");
+  assert.equal(b.subject, "[Test] Subj B");
+  assert.equal(a.text, "TEST MODE: would be sent to a@x.test\n\nText A");
+  assert.match(a.html, /<body style="margin:0;"><div[^>]*>Test mode: would be sent to <strong>a@x\.test<\/strong>/);
+  assert.match(b.html, /<body><div[^>]*>Test mode: would be sent to <strong>b@x\.test<\/strong>/);
+});
+test("redirectForTest escapes the real address inside the html banner", () => {
+  const [email] = redirectForTest(
+    [{ to: "a<b@x.test", subject: "S", text: "T", html: "<html><body>X</body></html>" }],
+    "me@x.test",
+  );
+  assert.match(email.html, /would be sent to <strong>a&lt;b@x\.test<\/strong>/);
+});
+test("redirectForTest prepends the banner when there is no body tag", () => {
+  const [email] = redirectForTest([{ to: "a@x.test", subject: "S", text: "T", html: "<p>no body here</p>" }], "me@x.test");
+  assert.match(email.html, /^<div[^>]*>Test mode: would be sent to <strong>a@x\.test<\/strong><\/div><p>/);
 });

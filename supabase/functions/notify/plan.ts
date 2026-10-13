@@ -1,6 +1,6 @@
 // Turns what happened (events from the database) into the emails to send. Pure: no Deno or network
 // APIs, so Node's tests import it. index.ts loads the rows; send.ts sends the result.
-import { decisionEmail, newRequestEmail } from "./email.ts";
+import { decisionEmail, escapeHtml, font, newRequestEmail } from "./email.ts";
 import type { DecisionInput, DecisionKind, Role, Status } from "./email.ts";
 
 export type NotifyEvent = {
@@ -205,4 +205,24 @@ export function sampleEmails(to: string, appUrl: string): OutgoingEmail[] {
     },
     ...decisions.map((d) => ({ to, ...decisionEmail(d) })),
   ];
+}
+
+// NOTIFY_TEST_TO support: reroutes every planned email to one inbox for a live test, saying who it
+// would really have gone to. Not used for the samples_to path, which already targets one address.
+export function redirectForTest(emails: OutgoingEmail[], testTo: string): OutgoingEmail[] {
+  return emails.map((email) => {
+    const banner = `<div style="width:100%;background:#FFEECB;color:#8B5E22;font-family:${font};font-size:13px;padding:10px 16px;text-align:center;">Test mode: would be sent to <strong>${escapeHtml(email.to)}</strong></div>`;
+    const bodyTag = /<body\b[^>]*>/i.exec(email.html);
+    const html = bodyTag
+      ? email.html.slice(0, bodyTag.index + bodyTag[0].length) +
+        banner +
+        email.html.slice(bodyTag.index + bodyTag[0].length)
+      : banner + email.html;
+    return {
+      to: testTo,
+      subject: `[Test] ${email.subject}`,
+      text: `TEST MODE: would be sent to ${email.to}\n\n${email.text}`,
+      html,
+    };
+  });
 }

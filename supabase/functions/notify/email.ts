@@ -37,7 +37,8 @@ const tones: Record<Status, { bg: string; fg: string; label: string }> = {
   pending: { bg: "#FFEECB", fg: "#8B5E22", label: "Pending" },
   denied: { bg: "#FFE6E7", fg: "#C12445", label: "Denied" },
 };
-const font =
+// Exported so plan.ts's test-mode banner matches the rest of the email instead of duplicating it.
+export const font =
   "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
 export function escapeHtml(value: string): string {
