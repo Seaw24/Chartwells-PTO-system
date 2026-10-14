@@ -36,7 +36,7 @@ node scripts/deploy-aws.mjs --dry-run
 node scripts/deploy-aws.mjs
 ```
 
-The script runs the source check and production build, backs up the mounted `employee-access` Edge Function, installs it through Systems Manager, and restarts its container. It then backs up `index.html`, uploads hashed assets to S3, publishes the new index, and invalidates CloudFront. It keeps earlier hashed assets so cached pages continue to work. Use `--frontend-only` or `--function-only` when deploying one part. Function backups remain beside the live file on EC2; index backups are under `deploy-backups/` in S3. Database migrations are deployed separately.
+The script runs the source check and production build, copies each Edge Function folder (`employee-access`, `notify`) to the server through Systems Manager, and restarts the functions container. It then backs up `index.html`, uploads hashed assets to S3, publishes the new index, and invalidates CloudFront. It keeps earlier hashed assets so cached pages continue to work. Use `--frontend-only` or `--function-only` when deploying one part, and `--function=<name>` to deploy a single function. Function backups are under `/opt/chartwells/function-backups/` on EC2 (outside the served folder, where every folder is a function); index backups are under `deploy-backups/` in S3. Database migrations and function environment variables are deployed separately (see `supabase/README.md`).
 
 ## Data flow and refresh behavior
 
