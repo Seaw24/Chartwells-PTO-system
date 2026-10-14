@@ -248,3 +248,124 @@ test("stamping and denying go through the two-stamp procedures", async () => {
     { p_request_id: "t", p_slot: "team", p_override: true },
   );
 });
+test("who's off groups lines into view-only requests, and a missing function leaves the view intact", async () => {
+  const api = client();
+  api.rpc = async (name) => {
+    if (name === "who_is_off")
+      return {
+        data: [
+          {
+            request_id: "r1",
+            requester_id: "bo",
+            status: "approved",
+            pto_type_id: "v",
+            start_date: "2040-03-05",
+            end_date: "2040-03-06",
+            holiday_id: null,
+            holiday_name: null,
+          },
+          {
+            request_id: "r1",
+            requester_id: "bo",
+            status: "approved",
+            pto_type_id: "s",
+            start_date: "2040-03-09",
+            end_date: "2040-03-09",
+            holiday_id: null,
+            holiday_name: null,
+          },
+        ],
+        error: null,
+      };
+    if (name === "team_directory")
+      return {
+        data: [
+          {
+            id: "bo",
+            name: "Bo Beta",
+            memberships: [
+              { team_id: "t1", role: "employee" },
+              { team_id: "t2", role: "admin" },
+            ],
+          },
+        ],
+        error: null,
+      };
+    return { data: null, error: null };
+  };
+  const source = createSupabaseDataSource(api);
+  assert.deepEqual(await source.whoIsOff(), [
+    {
+      id: "r1",
+      userId: "bo",
+      status: "approved",
+      viewOnly: true,
+      lines: [
+        {
+          type: "v",
+          start: "2040-03-05",
+          end: "2040-03-06",
+          holidayId: null,
+          holidayName: null,
+        },
+        {
+          type: "s",
+          start: "2040-03-09",
+          end: "2040-03-09",
+          holidayId: null,
+          holidayName: null,
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(await source.teamDirectory(), [
+    {
+      id: "bo",
+      name: "Bo Beta",
+      role: "admin",
+      team: "t2",
+      memberships: [
+        { teamId: "t1", role: "employee" },
+        { teamId: "t2", role: "admin" },
+      ],
+      isActive: true,
+    },
+  ]);
+  api.rpc = async () => ({
+    data: null,
+    error: { message: "function who_is_off() does not exist" },
+  });
+  assert.deepEqual(await source.whoIsOff(), []);
+  assert.deepEqual(await source.teamDirectory(), []);
+});
+test("the viewer's own copy of a request and of a person wins over the everyone view", async () => {
+  const { mergeWhosOff } = await server.ssrLoadModule("/src/utils/whosOff.jsx");
+  const mine = { id: "r1", userId: "me", status: "denied", note: "mine" },
+    merged = mergeWhosOff({
+      requests: [mine],
+      users: [{ id: "me", name: "Zed Me", email: "me@x" }],
+      offRequests: [
+        { id: "r1", userId: "me", status: "denied", viewOnly: true },
+        { id: "r2", userId: "bo", status: "pending", viewOnly: true },
+      ],
+      directory: [
+        { id: "me", name: "Zed Me" },
+        { id: "bo", name: "Bo Beta" },
+      ],
+    });
+  assert.deepEqual(
+    merged.requests.map((r) => [r.id, !!r.viewOnly]),
+    [
+      ["r1", false],
+      ["r2", true],
+    ],
+  );
+  assert.equal(merged.requests[0], mine);
+  assert.deepEqual(
+    merged.users.map((u) => [u.id, u.email ?? null]),
+    [
+      ["bo", null],
+      ["me", "me@x"],
+    ],
+  );
+});

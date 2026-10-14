@@ -21,7 +21,8 @@ import { useCurrentUser } from "../context/AuthContext.jsx";
 import { useToday } from "../data/today.jsx";
 import { useDataSource } from "../data/dataSource.jsx";
 import { useRequestModal } from "../components/requests/RequestModalProvider.jsx";
-import { canApprove } from "../utils/constants.jsx";
+import { mergeWhosOff } from "../utils/whosOff.jsx";
+import { WhosOffCatalog } from "../utils/whosOff.jsx";
 import { useVersion } from "../context/DataVersionContext.jsx";
 import { useBumpVersion } from "../context/DataVersionContext.jsx";
 import { useSearchParams as Vendor_useSearchParams } from "react-router-dom";
@@ -73,11 +74,9 @@ export function buildMobileDays({
   requests: requests,
   holidays: holidays,
   todayIso: todayIso,
-  coverageByDay: coverageByDay,
   ptoTypes: ptoTypes,
   dateRules: dateRules,
   blackouts: blackouts,
-  aggregateOnly = !1,
 }) {
   const u = {
     ptoTypes: ptoTypes,
@@ -89,8 +88,7 @@ export function buildMobileDays({
       f = requests
         .filter((g) => rangesOverlap(d, d, g.start, g.end))
         .sort((g, k) => (Up[g.status] ?? 2) - (Up[k.status] ?? 2)),
-      p = new Set(f.map((g) => g.userId)).size,
-      y = coverageByDay[d];
+      p = new Set(f.map((g) => g.userId)).size;
     return {
       date: h,
       iso: d,
@@ -104,12 +102,7 @@ export function buildMobileDays({
       blackout: isBlackoutDay(h, blackouts),
       typeMarks: dateTypeMarks(h, u),
       entries: f,
-      offCount: aggregateOnly ? ((y == null ? void 0 : y.outCount) ?? 0) : p,
-      onShiftCount: aggregateOnly
-        ? y == null
-          ? void 0
-          : y.onShiftCount
-        : void 0,
+      offCount: p,
     };
   });
 }
@@ -118,13 +111,11 @@ export function MobileCalendar({
   requests: requests,
   holidays: holidays,
   todayIso: todayIso,
-  coverageByDay: coverageByDay,
   selectedIso: selectedIso,
   onSelectDay: onSelectDay,
   onRequestDay: onRequestDay,
   onChipClick: onChipClick,
   highlight: highlight,
-  aggregateOnly = !1,
   hasActiveFilters = !1,
 }) {
   const {
@@ -141,23 +132,11 @@ export function MobileCalendar({
           requests: requests,
           holidays: holidays,
           todayIso: todayIso,
-          coverageByDay: coverageByDay,
           ptoTypes: ptoTypes,
           dateRules: dateRules,
           blackouts: blackouts,
-          aggregateOnly: aggregateOnly,
         }),
-      [
-        days,
-        requests,
-        holidays,
-        todayIso,
-        coverageByDay,
-        ptoTypes,
-        dateRules,
-        blackouts,
-        aggregateOnly,
-      ],
+      [days, requests, holidays, todayIso, ptoTypes, dateRules, blackouts],
     ),
     m = v.find((x) => x.iso === selectedIso) || v[0];
   return m ? (
@@ -202,13 +181,15 @@ export function MobileCalendar({
               {m.dateLabel}
             </p>
             <p className="mt-0.5 text-xs text-ink-mute">
-              {m.entries.length > 0
+              {m.entries.some((x) => !x.viewOnly)
                 ? "Tap a person to view the request"
-                : m.isToday
-                  ? "Today"
-                  : m.isPast
-                    ? "Past day"
-                    : "Open for requests"}
+                : m.entries.length > 0
+                  ? "Who's off this day"
+                  : m.isToday
+                    ? "Today"
+                    : m.isPast
+                      ? "Past day"
+                      : "Open for requests"}
             </p>
           </div>
           <span
@@ -274,7 +255,8 @@ export function MobileCalendar({
                   <button
                     type="button"
                     onClick={() => onChipClick(x)}
-                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-panel ${_ ? "bg-accent-soft/60 ring-1 ring-inset ring-accent-line" : ""}`}
+                    aria-disabled={x.viewOnly || void 0}
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${x.viewOnly ? "cursor-default" : "active:bg-panel"} ${_ ? "bg-accent-soft/60 ring-1 ring-inset ring-accent-line" : ""}`}
                   >
                     <Avatar
                       name={b == null ? void 0 : b.name}
@@ -305,21 +287,6 @@ export function MobileCalendar({
               );
             })}
           </ul>
-        ) : m.offCount > 0 && aggregateOnly ? (
-          <div className="flex items-start gap-3 px-4 py-4">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-warning-soft text-warning-ink">
-              <Vendor_Users size={16} />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-ink">
-                {m.offCount} {m.offCount === 1 ? "person is" : "people are"}
-                {" off"}
-              </p>
-              <p className="mt-0.5 text-xs leading-relaxed text-ink-mute">
-                {"Names and leave types stay private."}
-              </p>
-            </div>
-          </div>
         ) : (
           <div className="flex items-center gap-3 px-4 py-4">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-success-soft text-success-ink">
@@ -386,21 +353,23 @@ export const CALENDAR_STATUSES = [
   },
 ];
 export function CalendarPage() {
-  var lh, ch;
+  var lh;
   const e = useCurrentUser(),
     t = useToday(),
-    { getRequests: getRequests, coverageForRange: coverageForRange } =
-      useDataSource(),
     {
-      users: users,
+      getRequests: getRequests,
+      coverageForRange: coverageForRange,
+      whoIsOff: whoIsOff,
+      teamDirectory: teamDirectory,
+    } = useDataSource(),
+    {
+      users: catalogUsers,
       teams: teams,
       ptoTypes: ptoTypes,
       holidays: holidays,
-      userById: userById,
       teamById: teamById,
     } = useCatalog(),
     { openRequest: openRequest } = useRequestModal(),
-    d = canApprove(e.role),
     [y, g] = React.useState(!1),
     [k, v] = React.useState(
       () =>
@@ -415,7 +384,7 @@ export function CalendarPage() {
     [_, j] = React.useState(t),
     [S, R] = React.useState(() => new Set(ptoTypes.map((O) => O.id))),
     [E, T] = React.useState(new Set(["approved", "pending"])),
-    [C, H] = React.useState(e.role === "admin" ? e.team : "all"),
+    [C, H] = React.useState("all"),
     [I, D] = React.useState("all"),
     [q, Z] = React.useState(!1),
     [P, $] = React.useState(null),
@@ -426,9 +395,14 @@ export function CalendarPage() {
     [fe, ye] = Vendor_useSearchParams();
   const { data: f = null } = useResource(
     ["calendar-requests"],
-    async () => ({
-      requests: await getRequests(),
-    }),
+    async () => {
+      const [requests, offRequests, directory] = await Promise.all([
+        getRequests(),
+        whoIsOff(),
+        teamDirectory(),
+      ]);
+      return { requests, offRequests, directory };
+    },
     true,
   );
   (React.useEffect(() => {
@@ -442,7 +416,23 @@ export function CalendarPage() {
     );
   }, []),
     void 0);
-  const Q = (f == null ? void 0 : f.requests) ?? [];
+  // Everyone sees every team's time off, as HR does; see mergeWhosOff.
+  const merged = React.useMemo(
+      () =>
+        mergeWhosOff({
+          requests: f?.requests,
+          users: catalogUsers,
+          offRequests: f?.offRequests,
+          directory: f?.directory,
+        }),
+      [f, catalogUsers],
+    ),
+    users = merged.users,
+    userById = React.useCallback(
+      (id) => users.find((u) => u.id === id),
+      [users],
+    ),
+    Q = merged.requests;
   React.useEffect(() => {
     const O = fe.get("req");
     if (!O) return;
@@ -460,13 +450,8 @@ export function CalendarPage() {
   }, [fe, Q, ye]);
   const Y = V ? Q.find((O) => O.id === V) : null,
     ee = React.useMemo(
-      () =>
-        e.role === "god_admin"
-          ? C === "all"
-            ? users
-            : users.filter((O) => O.team === C)
-          : users.filter((O) => O.team === e.team),
-      [e, C, users],
+      () => (C === "all" ? users : users.filter((O) => O.team === C)),
+      [C, users],
     );
   React.useEffect(() => {
     I !== "all" && !ee.some((O) => O.id === I) && D("all");
@@ -495,12 +480,7 @@ export function CalendarPage() {
     _e = React.useMemo(() => {
       const O = Q.flatMap((te) => {
         const ge = userById(te.userId);
-        if (e.role === "employee") {
-          if ((ge == null ? void 0 : ge.team) !== e.team) return [];
-        } else if (e.role === "admin") {
-          if ((ge == null ? void 0 : ge.team) !== e.team) return [];
-        } else if (C !== "all" && (ge == null ? void 0 : ge.team) !== C)
-          return [];
+        if (C !== "all" && (ge == null ? void 0 : ge.team) !== C) return [];
         return I !== "all" && te.userId !== I
           ? []
           : E.has(te.status)
@@ -528,7 +508,7 @@ export function CalendarPage() {
         value: "week",
         label: "Week",
       },
-      d && {
+      {
         value: "timeline",
         label: "Timeline",
       },
@@ -569,8 +549,7 @@ export function CalendarPage() {
     j(toISO(O || W[0]));
   }, [k, W, _, t]),
     void 0);
-  const we = e.role === "god_admin" ? C : e.team,
-    be = React.useMemo(() => aggregateCoverage(B, we), [B, we]),
+  const be = React.useMemo(() => aggregateCoverage(B, C), [B, C]),
     cn = m === "month" ? fmtMonth(b) : weekRangeLabel(W[0], W[W.length - 1]),
     un = m === "month" ? "month" : m === "week" ? "week" : "fortnight",
     Dt = React.useMemo(() => {
@@ -600,44 +579,22 @@ export function CalendarPage() {
         }
       );
     }, [W, _e]),
-    Jr = W.reduce(
-      (O, te) => {
-        const ge = be[toISO(te)];
-        return (ge == null ? void 0 : ge.outCount) > O.outCount
-          ? {
-              day: te,
-              outCount: ge.outCount,
-            }
-          : O;
-      },
-      {
-        day: W[0],
-        outCount: 0,
-      },
-    ),
-    Na =
-      e.role === "employee"
-        ? Jr.outCount > 0
-          ? `${Jr.outCount} out on the busiest day, ${Vendor_format(Jr.day, "EEE MMM d")}. Names and leave types stay private.`
-          : `Everyone is in this ${un}.`
-        : ve
-          ? Dt.offCount > 0
-            ? `${firstName(ve.name)} has time off this ${un}.`
-            : `${firstName(ve.name)} is in all ${un}.`
-          : Dt.offCount === 0
-            ? `Everyone is in this ${un}.`
-            : Dt.peak.count >= 2
-              ? `${Dt.offCount} ${Dt.offCount === 1 ? "person" : "people"} off this ${un} · busiest ${Vendor_format(Dt.peak.d, "EEE MMM d")} (${Dt.peak.count} off)`
-              : `${Dt.offCount} ${Dt.offCount === 1 ? "person" : "people"} off this ${un}.`,
+    Na = ve
+      ? Dt.offCount > 0
+        ? `${firstName(ve.name)} has time off this ${un}.`
+        : `${firstName(ve.name)} is in all ${un}.`
+      : Dt.offCount === 0
+        ? `Everyone is in this ${un}.`
+        : Dt.peak.count >= 2
+          ? `${Dt.offCount} ${Dt.offCount === 1 ? "person" : "people"} off this ${un} · busiest ${Vendor_format(Dt.peak.d, "EEE MMM d")} (${Dt.peak.count} off)`
+          : `${Dt.offCount} ${Dt.offCount === 1 ? "person" : "people"} off this ${un}.`,
     Sa = ve
       ? ve.name
-      : e.role === "god_admin"
-        ? C === "all"
-          ? "All teams"
-          : (lh = teamById(C)) == null
-            ? void 0
-            : lh.name
-        : ((ch = teamById(e.team)) == null ? void 0 : ch.name) || "Coverage",
+      : C === "all"
+        ? "All teams"
+        : (lh = teamById(C)) == null
+          ? void 0
+          : lh.name,
     F =
       (S.size < ptoTypes.length ? 1 : 0) +
       (E.size < CALENDAR_STATUSES.length ? 1 : 0),
@@ -657,8 +614,9 @@ export function CalendarPage() {
     const jn = new Set(O);
     (jn.has(ge) ? jn.delete(ge) : jn.add(ge), te(jn));
   };
+  // Someone else's time off is view only unless the viewer could already open the request.
   function Ea(O, te) {
-    te ? X(te) : $(O.requestId || O.id);
+    te ? X(te) : O.viewOnly || $(O.requestId || O.id);
   }
   return y ? (
     <div className="rounded-card border border-line bg-card shadow-card">
@@ -694,63 +652,63 @@ export function CalendarPage() {
       <Skeleton className="h-[62vh] w-full" rounded="rounded-card" />
     </div>
   ) : (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 sm:gap-5">
-      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="eyebrow">{Sa}</p>
-          <h1 className="mt-1.5 text-[26px] font-bold leading-none tracking-tight text-ink">
-            {cn}
-          </h1>
-          <p className="mt-2 text-[13px] font-medium text-ink-soft">{Na}</p>
-        </div>
-        <div className="hidden sm:block">
-          <SegmentedControl
-            options={mt}
-            value={m}
-            onChange={x}
-            size="sm"
-            className="shrink-0"
-          />
-        </div>
-      </header>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() =>
-                Lt((O) =>
-                  m === "month"
-                    ? Vendor_addMonths(O, -1)
-                    : Vendor_addWeeks(O, m === "timeline" ? -2 : -1),
-                )
-              }
-              className="grid h-9 w-9 place-items-center rounded-btn border border-line bg-card text-ink-soft transition-colors hover:bg-panel"
-              aria-label="Previous period"
-            >
-              <Vendor_ChevronLeft size={18} />
-            </button>
-            <button
-              onClick={() =>
-                Lt((O) =>
-                  m === "month"
-                    ? Vendor_addMonths(O, 1)
-                    : Vendor_addWeeks(O, m === "timeline" ? 2 : 1),
-                )
-              }
-              className="grid h-9 w-9 place-items-center rounded-btn border border-line bg-card text-ink-soft transition-colors hover:bg-panel"
-              aria-label="Next period"
-            >
-              <Vendor_ChevronRight size={18} />
-            </button>
+    <WhosOffCatalog users={users}>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 sm:gap-5">
+        <header className="flex shrink-0 flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <p className="eyebrow">{Sa}</p>
+            <h1 className="mt-1.5 text-[26px] font-bold leading-none tracking-tight text-ink">
+              {cn}
+            </h1>
+            <p className="mt-2 text-[13px] font-medium text-ink-soft">{Na}</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => Lt(toDateLocal(t))}
-          >
-            {"Today"}
-          </Button>
-          {d && (
+          <div className="hidden sm:block">
+            <SegmentedControl
+              options={mt}
+              value={m}
+              onChange={x}
+              size="sm"
+              className="shrink-0"
+            />
+          </div>
+        </header>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() =>
+                  Lt((O) =>
+                    m === "month"
+                      ? Vendor_addMonths(O, -1)
+                      : Vendor_addWeeks(O, m === "timeline" ? -2 : -1),
+                  )
+                }
+                className="grid h-9 w-9 place-items-center rounded-btn border border-line bg-card text-ink-soft transition-colors hover:bg-panel"
+                aria-label="Previous period"
+              >
+                <Vendor_ChevronLeft size={18} />
+              </button>
+              <button
+                onClick={() =>
+                  Lt((O) =>
+                    m === "month"
+                      ? Vendor_addMonths(O, 1)
+                      : Vendor_addWeeks(O, m === "timeline" ? 2 : 1),
+                  )
+                }
+                className="grid h-9 w-9 place-items-center rounded-btn border border-line bg-card text-ink-soft transition-colors hover:bg-panel"
+                aria-label="Next period"
+              >
+                <Vendor_ChevronRight size={18} />
+              </button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => Lt(toDateLocal(t))}
+            >
+              {"Today"}
+            </Button>
             <span className="hidden sm:inline-flex">
               <Button
                 variant="outline"
@@ -766,10 +724,8 @@ export function CalendarPage() {
                 {ve ? `${firstName(ve.name)}'s next off` : "Next off"}
               </Button>
             </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {e.role === "god_admin" && (
+          </div>
+          <div className="flex items-center gap-2">
             <FilterDropdown
               options={Pe}
               value={C}
@@ -780,98 +736,76 @@ export function CalendarPage() {
               searchPlaceholder="Search teams…"
               ariaLabel="Filter by team"
             />
-          )}
-          {d && <PersonPicker people={ee} value={I} onChange={D} />}
-          <Button
-            variant={q ? "navy" : "outline"}
-            size="sm"
-            onClick={() => Z((O) => !O)}
-          >
-            {"Filters"}
-            {F > 0 && (
-              <span
-                className={`ml-1 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-bold tabular ${q ? "bg-navy-fg/20 text-navy-fg" : "bg-accent-soft text-accent-ink"}`}
-              >
-                {F}
-              </span>
-            )}
-          </Button>
+            <PersonPicker people={ee} value={I} onChange={D} />
+            <Button
+              variant={q ? "navy" : "outline"}
+              size="sm"
+              onClick={() => Z((O) => !O)}
+            >
+              {"Filters"}
+              {F > 0 && (
+                <span
+                  className={`ml-1 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-bold tabular ${q ? "bg-navy-fg/20 text-navy-fg" : "bg-accent-soft text-accent-ink"}`}
+                >
+                  {F}
+                </span>
+              )}
+            </Button>
+          </div>
         </div>
-      </div>
-      {q && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-card border border-line bg-card px-4 py-3 shadow-card animate-fade-up">
-          <FilterGroup label="Type">
-            {ptoTypes.map((O) => (
-              <StatusFilter
-                active={S.has(O.id)}
-                onClick={() => ei(S, R, O.id)}
-                color={O.color}
-                key={O.id}
-              >
-                {O.name}
-              </StatusFilter>
-            ))}
-          </FilterGroup>
-          <FilterGroup label="Status">
-            {CALENDAR_STATUSES.map((O) => (
-              <StatusFilter
-                active={E.has(O.id)}
-                onClick={() => ei(E, T, O.id)}
-                key={O.id}
-              >
-                {O.label}
-              </StatusFilter>
-            ))}
-          </FilterGroup>
-        </div>
-      )}
-      <div className="sm:hidden">
-        <MobileCalendar
-          days={W}
-          requests={_e}
-          holidays={holidays}
-          todayIso={t}
-          coverageByDay={be}
-          selectedIso={_}
-          onSelectDay={j}
-          onRequestDay={(O) =>
-            openRequest({
-              start: O,
-              end: O,
-            })
-          }
-          onChipClick={Ea}
-          highlight={Y}
-          aggregateOnly={e.role === "employee"}
-          hasActiveFilters={F > 0 || I !== "all"}
-        />
-      </div>
-      <div
-        className={`hidden min-h-0 flex-col animate-fade-in sm:flex ${m === "month" ? "flex-none" : "flex-1"}`}
-        key={m}
-      >
-        {m === "month" && (
-          <MonthView
-            monthDate={b}
+        {q && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-card border border-line bg-card px-4 py-3 shadow-card animate-fade-up">
+            <FilterGroup label="Type">
+              {ptoTypes.map((O) => (
+                <StatusFilter
+                  active={S.has(O.id)}
+                  onClick={() => ei(S, R, O.id)}
+                  color={O.color}
+                  key={O.id}
+                >
+                  {O.name}
+                </StatusFilter>
+              ))}
+            </FilterGroup>
+            <FilterGroup label="Status">
+              {CALENDAR_STATUSES.map((O) => (
+                <StatusFilter
+                  active={E.has(O.id)}
+                  onClick={() => ei(E, T, O.id)}
+                  key={O.id}
+                >
+                  {O.label}
+                </StatusFilter>
+              ))}
+            </FilterGroup>
+          </div>
+        )}
+        <div className="sm:hidden">
+          <MobileCalendar
+            days={W}
             requests={_e}
             holidays={holidays}
             todayIso={t}
-            highlight={Y}
+            selectedIso={_}
+            onSelectDay={j}
+            onRequestDay={(O) =>
+              openRequest({
+                start: O,
+                end: O,
+              })
+            }
             onChipClick={Ea}
-            onEmptyClick={(O) => {
-              toISO(O) >= t &&
-                openRequest({
-                  start: toISO(O),
-                  end: toISO(O),
-                });
-            }}
-            coverageByDay={be}
+            highlight={Y}
+            hasActiveFilters={F > 0 || I !== "all"}
           />
-        )}
-        {m === "week" && (
-          <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
-            <WeekView
-              anchorDate={b}
+        </div>
+        <div
+          className={`hidden min-h-0 flex-col animate-fade-in sm:flex ${m === "month" ? "flex-none" : "flex-1"}`}
+          key={m}
+        >
+          {m === "month" && (
+            <MonthView
+              monthDate={b}
               requests={_e}
               holidays={holidays}
               todayIso={t}
@@ -886,64 +820,89 @@ export function CalendarPage() {
               }}
               coverageByDay={be}
             />
-          </div>
-        )}
-        {m === "timeline" && (
-          <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
-            <TeamTimeline
-              anchorDate={b}
-              members={Mt}
-              requests={_e}
-              holidays={holidays}
-              todayIso={t}
-              highlight={Y}
-              onChipClick={Ea}
-            />
-          </div>
-        )}
+          )}
+          {m === "week" && (
+            <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
+              <WeekView
+                anchorDate={b}
+                requests={_e}
+                holidays={holidays}
+                todayIso={t}
+                highlight={Y}
+                onChipClick={Ea}
+                onEmptyClick={(O) => {
+                  toISO(O) >= t &&
+                    openRequest({
+                      start: toISO(O),
+                      end: toISO(O),
+                    });
+                }}
+                coverageByDay={be}
+              />
+            </div>
+          )}
+          {m === "timeline" && (
+            <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
+              <TeamTimeline
+                anchorDate={b}
+                members={Mt}
+                requests={_e}
+                holidays={holidays}
+                todayIso={t}
+                highlight={Y}
+                onChipClick={Ea}
+              />
+            </div>
+          )}
+        </div>
+        <div className="hidden sm:block">
+          <CalendarLegend />
+        </div>
+        <RequestDetailModal
+          requestId={P}
+          open={!!P}
+          onClose={() => $(null)}
+          onChanged={A}
+        />
+        <Modal open={!!U} onClose={() => X(null)} title="All entries" size="sm">
+          {U && (
+            <ul className="space-y-2">
+              {U.map((O) => {
+                const name = userById(O.userId)?.name,
+                  row = (
+                    <>
+                      <Avatar name={name} id={O.userId} size="xs" />
+                      <span className="flex-1 text-sm font-medium text-ink">
+                        {name}
+                      </span>
+                      <PtoTypePill typeId={O.type} size="xs" />
+                      <StatusChip status={O.status} size="xs" />
+                    </>
+                  );
+                return (
+                  <li key={O.lineKey || O.id}>
+                    {O.viewOnly ? (
+                      <div className="flex w-full items-center gap-2.5 rounded-btn border border-line p-2.5">
+                        {row}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          (X(null), $(O.requestId || O.id));
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-btn border border-line p-2.5 text-left hover:bg-panel"
+                      >
+                        {row}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Modal>
       </div>
-      <div className="hidden sm:block">
-        <CalendarLegend />
-      </div>
-      <RequestDetailModal
-        requestId={P}
-        open={!!P}
-        onClose={() => $(null)}
-        onChanged={A}
-      />
-      <Modal open={!!U} onClose={() => X(null)} title="All entries" size="sm">
-        {U && (
-          <ul className="space-y-2">
-            {U.map((O) => {
-              var te, ge;
-              return (
-                <li key={O.lineKey || O.id}>
-                  <button
-                    onClick={() => {
-                      (X(null), $(O.requestId || O.id));
-                    }}
-                    className="flex w-full items-center gap-2.5 rounded-btn border border-line p-2.5 text-left hover:bg-panel"
-                  >
-                    <Avatar
-                      name={
-                        (te = userById(O.userId)) == null ? void 0 : te.name
-                      }
-                      id={O.userId}
-                      size="xs"
-                    />
-                    <span className="flex-1 text-sm font-medium text-ink">
-                      {(ge = userById(O.userId)) == null ? void 0 : ge.name}
-                    </span>
-                    <PtoTypePill typeId={O.type} size="xs" />
-                    <StatusChip status={O.status} size="xs" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Modal>
-    </div>
+    </WhosOffCatalog>
   );
 }
 export function weekRangeLabel(e, t) {

@@ -57,6 +57,8 @@ const reads = new Set([
   "getBlackouts",
   "getDateRules",
   "coverageForRange",
+  "whoIsOff",
+  "teamDirectory",
   "teamMembers",
   "getNotifications",
   "unreadCount",

@@ -340,7 +340,8 @@ export function CoverageBar({
       type="button"
       onClick={() => (onBarClick == null ? void 0 : onBarClick(bar))}
       title={`${i == null ? void 0 : i.name} · ${bar.status}`}
-      className={`press group absolute flex animate-bar-wipe items-center gap-1.5 overflow-hidden text-[11.5px] font-semibold outline-none hover:z-10 hover:-translate-y-px hover:shadow-card focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${u ? "ring-2 ring-accent ring-offset-1" : ""}`}
+      aria-disabled={bar.viewOnly || void 0}
+      className={`group absolute flex animate-bar-wipe items-center gap-1.5 overflow-hidden text-[11.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${bar.viewOnly ? "cursor-default" : "press hover:z-10 hover:-translate-y-px hover:shadow-card"} ${u ? "ring-2 ring-accent ring-offset-1" : ""}`}
       style={{
         animationDelay: `${Math.min(index, 10) * 26 + 40}ms`,
         top: `${10 + bar.lane * Lx}px`,
@@ -647,7 +648,8 @@ export function MobileCoverageBar({ bar: bar, onClick: onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="mt-0.5 flex items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 rounded-chip"
+      aria-disabled={bar.viewOnly || void 0}
+      className={`mt-0.5 flex items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 rounded-chip ${bar.viewOnly ? "cursor-default" : ""}`}
     >
       <span
         className="inline-flex items-center gap-1.5 rounded-chip px-2 py-0.5 text-[11px] font-semibold"

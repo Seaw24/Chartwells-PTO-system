@@ -941,3 +941,109 @@ test("only HR changes when a type resets, and only from a future date on that da
     { e30: "2031-06-30", s31: "2031-07-01" },
   );
 });
+
+// Everyone sees who is off on every team. Its own cast on two teams, with far-future dates so no
+// earlier request overlaps.
+const wA = "00000000-0000-0000-0000-0000000000d1",
+  wB = "00000000-0000-0000-0000-0000000000d2",
+  wGone = "00000000-0000-0000-0000-0000000000d3",
+  wTeamA = "00000000-0000-0000-0000-0000000000d4",
+  wTeamB = "00000000-0000-0000-0000-0000000000d5";
+const wRequest = {
+  approved: "00000000-0000-0000-0000-0000000000e1",
+  pending: "00000000-0000-0000-0000-0000000000e2",
+  denied: "00000000-0000-0000-0000-0000000000e3",
+  cancelled: "00000000-0000-0000-0000-0000000000e4",
+  gone: "00000000-0000-0000-0000-0000000000e5",
+};
+test("who's off: setup", async () => {
+  await db.exec(
+    `reset role;insert into auth.users values('${wA}'),('${wB}'),('${wGone}');
+     insert into profiles(id,name,email,org_role,password_setup_required,is_active) values
+       ('${wA}','Ada Alpha','ada@example.test','member',false,true),
+       ('${wB}','Bo Beta','bo@example.test','member',false,true),
+       ('${wGone}','Gus Gone','gus@example.test','member',false,false);
+     insert into teams(id,name) values('${wTeamA}','Alpha Kitchen'),('${wTeamB}','Beta Kitchen');
+     insert into team_memberships(team_id,user_id) values('${wTeamA}','${wA}'),('${wTeamB}','${wB}'),('${wTeamB}','${wGone}');
+     insert into requests(id,requester_id,status,note) values
+       ('${wRequest.approved}','${wB}','approved','private note'),
+       ('${wRequest.pending}','${wB}','pending',null),
+       ('${wRequest.denied}','${wB}','denied',null),
+       ('${wRequest.cancelled}','${wB}','cancelled',null),
+       ('${wRequest.gone}','${wGone}','approved',null);
+     insert into request_lines(request_id,pto_type_id,start_date,end_date) values
+       ('${wRequest.approved}','${type}','2040-03-05','2040-03-06'),
+       ('${wRequest.pending}','${type}','2040-03-12','2040-03-12'),
+       ('${wRequest.denied}','${type}','2040-03-19','2040-03-19'),
+       ('${wRequest.cancelled}','${type}','2040-03-26','2040-03-26'),
+       ('${wRequest.gone}','${type}','2040-04-02','2040-04-02');`,
+  );
+});
+test("an employee sees another team's approved and pending time off, and nothing private", async () => {
+  // Their own view of requests is still limited to themselves.
+  assert.equal(
+    (await as(wA, "select * from requests where requester_id=$1", [wB])).rows
+      .length,
+    0,
+  );
+  const result = await as(
+    wA,
+    "select * from who_is_off() where requester_id=any($1::uuid[]) order by start_date",
+    [[wB, wGone]],
+  );
+  assert.deepEqual(
+    result.fields.map((f) => f.name),
+    [
+      "request_id",
+      "requester_id",
+      "status",
+      "pto_type_id",
+      "start_date",
+      "end_date",
+      "holiday_id",
+      "holiday_name",
+    ],
+  );
+  assert.deepEqual(
+    result.rows.map((r) => [r.request_id, r.status]),
+    [
+      [wRequest.approved, "approved"],
+      [wRequest.pending, "pending"],
+    ],
+  );
+});
+test("the directory lists active people with their teams only", async () => {
+  const result = await as(
+    wA,
+    "select * from team_directory() where id=any($1::uuid[]) order by name",
+    [[wA, wB, wGone]],
+  );
+  assert.deepEqual(
+    result.fields.map((f) => f.name),
+    ["id", "name", "memberships"],
+  );
+  assert.deepEqual(
+    result.rows.map((r) => [r.name, r.memberships]),
+    [
+      ["Ada Alpha", [{ team_id: wTeamA, role: "employee" }]],
+      ["Bo Beta", [{ team_id: wTeamB, role: "employee" }]],
+    ],
+  );
+});
+test("a deactivated account cannot read who's off or the directory", async () => {
+  await assert.rejects(as(wGone, "select * from who_is_off()"), /Not authenticated/);
+  await assert.rejects(
+    as(wGone, "select * from team_directory()"),
+    /Not authenticated/,
+  );
+  await db.exec("reset role");
+  const grants = (
+    await db.query(
+      "select p.proname, has_function_privilege('public', p.oid, 'execute') pub from pg_proc p where p.proname in ('who_is_off','team_directory') order by 1",
+    )
+  ).rows;
+  assert.deepEqual(grants, [
+    { proname: "team_directory", pub: false },
+    { proname: "who_is_off", pub: false },
+  ]);
+});

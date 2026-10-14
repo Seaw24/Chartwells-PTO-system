@@ -19,6 +19,8 @@ import { requestRangeLabel } from "../utils/requestHelpers.jsx";
 import { requestEnd } from "../utils/requestHelpers.jsx";
 import { requestStart } from "../utils/requestHelpers.jsx";
 import { RequestDetailModal } from "../components/requests/RequestDetailModal.jsx";
+import { mergeWhosOff } from "../utils/whosOff.jsx";
+import { WhosOffCatalog } from "../utils/whosOff.jsx";
 export function Dashboard() {
   const e = useCurrentUser(),
     t = useToday(),
@@ -29,6 +31,8 @@ export function Dashboard() {
       usedFor: usedFor,
       requestsForUser: requestsForUser,
       coverageForRange: coverageForRange,
+      whoIsOff: whoIsOff,
+      teamDirectory: teamDirectory,
     } = useDataSource(),
     {
       users: users,
@@ -47,8 +51,17 @@ export function Dashboard() {
       const start = Vendor_startOfWeek(toDateLocal(t), {
         weekStartsOn: 0,
       });
-      const [requests, myRequests, coverageRows, balances] = await Promise.all([
+      const [
+        requests,
+        offRequests,
+        directory,
+        myRequests,
+        coverageRows,
+        balances,
+      ] = await Promise.all([
         getRequests(),
+        whoIsOff(),
+        teamDirectory(),
         requestsForUser(e.id),
         coverageForRange(toISO(start), toISO(Vendor_addDays(start, 6))),
         Promise.all(
@@ -70,6 +83,8 @@ export function Dashboard() {
       ]);
       return {
         requests,
+        offRequests,
+        directory,
         myRequests,
         coverageRows,
         balances,
@@ -78,10 +93,17 @@ export function Dashboard() {
     true,
   );
   if ((void 0, !p)) return <DashboardView loading={!0} />;
-  const x = buildCoverageWeek({
-      todayIso: t,
-      users: users,
+  // Everyone sees every team's time off, as HR does; see mergeWhosOff.
+  const merged = mergeWhosOff({
       requests: p.requests,
+      users: users,
+      offRequests: p.offRequests,
+      directory: p.directory,
+    }),
+    x = buildCoverageWeek({
+      todayIso: t,
+      users: merged.users,
+      requests: merged.requests,
       teams: teams,
       holidays: holidays,
       coverageRows: p.coverageRows,
@@ -111,7 +133,7 @@ export function Dashboard() {
       .slice(0, 3)
       .map(b);
   return (
-    <>
+    <WhosOffCatalog users={merged.users}>
       <DashboardView
         activeUser={e}
         week={x}
@@ -128,7 +150,7 @@ export function Dashboard() {
               end: j,
             });
         }}
-        onBarClick={(j) => k(j.requestId)}
+        onBarClick={(j) => j.viewOnly || k(j.requestId)}
       />
       <RequestDetailModal
         requestId={g}
@@ -136,6 +158,6 @@ export function Dashboard() {
         onClose={() => k(null)}
         onChanged={m}
       />
-    </>
+    </WhosOffCatalog>
   );
 }

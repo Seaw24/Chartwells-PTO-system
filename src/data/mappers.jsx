@@ -96,6 +96,48 @@ export const mapProfile = (e) => {
     updatedBy: e.updated_by,
   };
 };
+// who_is_off() rows are one per request line; the calendar wants one object per request, shaped
+// like mapRequest for the fields it draws. viewOnly marks a request the viewer cannot open.
+export const mapWhoIsOff = (rows = []) => {
+  const byId = new Map();
+  for (const row of rows) {
+    let request = byId.get(row.request_id);
+    if (!request) {
+      request = {
+        id: row.request_id,
+        userId: row.requester_id,
+        status: row.status,
+        lines: [],
+        viewOnly: true,
+      };
+      byId.set(row.request_id, request);
+    }
+    request.lines.push({
+      type: row.pto_type_id,
+      start: row.start_date,
+      end: row.end_date,
+      holidayId: row.holiday_id ?? null,
+      holidayName: row.holiday_name ?? null,
+    });
+  }
+  return [...byId.values()];
+};
+// team_directory() people, with team and role picked the way mapProfile picks them.
+export const mapDirectoryPerson = (e) => {
+  const memberships = (e.memberships ?? []).map((m) => ({
+      teamId: m.team_id,
+      role: m.role,
+    })),
+    lead = memberships.find((m) => m.role === "admin");
+  return {
+    id: e.id,
+    name: e.name,
+    role: lead ? "admin" : "employee",
+    team: (lead ?? memberships[0])?.teamId ?? null,
+    memberships,
+    isActive: true,
+  };
+};
 export const mapPtoType = (e) => ({
   id: e.id,
   name: e.name,

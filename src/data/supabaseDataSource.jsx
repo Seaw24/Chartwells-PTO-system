@@ -6,6 +6,8 @@ import { unwrap } from "./mappers.jsx";
 import { REQUEST_SELECT } from "./mappers.jsx";
 import { PROFILE_SELECT } from "./mappers.jsx";
 import { mapProfile } from "./mappers.jsx";
+import { mapWhoIsOff } from "./mappers.jsx";
+import { mapDirectoryPerson } from "./mappers.jsx";
 import { leaveYear } from "./mappers.jsx";
 import { mapAllowance } from "./mappers.jsx";
 import { localToday as todayIso } from "./today.jsx";
@@ -50,6 +52,16 @@ export function createSupabaseDataSource(clientOverride = null) {
           "request_stamp_facts",
           { p_request_id: requestId },
         );
+        return error ? [] : (data ?? []);
+      } catch {
+        return [];
+      }
+    },
+    // Who's off and who's on which team, for everyone signed in; see who_is_off(). Like the
+    // stamp facts, a missing function or failed call leaves the viewer's own view intact.
+    everyoneRpc = async (name) => {
+      try {
+        const { data: data, error: error } = await client.rpc(name);
         return error ? [] : (data ?? []);
       } catch {
         return [];
@@ -216,6 +228,9 @@ export function createSupabaseDataSource(clientOverride = null) {
         }))
         .filter((f) => f.user && (!u || belongsToTeam(f.user, u)));
     },
+    whoIsOff: async () => mapWhoIsOff(await everyoneRpc("who_is_off")),
+    teamDirectory: async () =>
+      (await everyoneRpc("team_directory")).map(mapDirectoryPerson),
     grantFor: grantFor,
     usedFor: usedFor,
     // onIso picks the leave year; today's when left out.

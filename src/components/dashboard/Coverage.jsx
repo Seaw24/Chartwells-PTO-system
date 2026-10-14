@@ -80,6 +80,7 @@ export function buildCoverageWeek({
                   start: j.start,
                   end: j.end,
                   requestId: j.requestId,
+                  viewOnly: !!j.viewOnly,
                 };
               })
               .sort((j, S) => j.startIdx - S.startIdx || j.endIdx - S.endIdx);

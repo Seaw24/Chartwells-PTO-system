@@ -42,7 +42,8 @@ export function CalendarChip({
       onClick={(u) => {
         (u.stopPropagation(), onClick == null || onClick(request));
       }}
-      className={`press flex w-full items-center gap-1.5 truncate rounded-chip px-1.5 text-left text-[11px] font-medium leading-tight hover:shadow-card ${dense ? "py-0.5" : "py-1"} ${highlighted ? "shadow-lift ring-2 ring-accent-strong ring-offset-1" : ""}`}
+      aria-disabled={request.viewOnly || void 0}
+      className={`flex w-full items-center gap-1.5 truncate rounded-chip px-1.5 text-left text-[11px] font-medium leading-tight ${request.viewOnly ? "cursor-default" : "press hover:shadow-card"} ${dense ? "py-0.5" : "py-1"} ${highlighted ? "shadow-lift ring-2 ring-accent-strong ring-offset-1" : ""}`}
       style={{
         background: `color-mix(in oklch, ${o.color} ${l ? 9 : 16}%, var(--c-card))`,
         border: l
@@ -465,7 +466,8 @@ export function WeekView({
                         (q.stopPropagation(),
                           onChipClick == null || onChipClick(T));
                       }}
-                      className={`rounded-chip px-2 py-1.5 text-left text-xs transition-[background,border-color,box-shadow] duration-[180ms] ease-out hover:shadow-card ${(T.requestId || T.id) === (highlight == null ? void 0 : highlight.id) ? "shadow-lift ring-2 ring-accent-strong ring-offset-1" : ""}`}
+                      aria-disabled={T.viewOnly || void 0}
+                      className={`rounded-chip px-2 py-1.5 text-left text-xs transition-[background,border-color,box-shadow] duration-[180ms] ease-out ${T.viewOnly ? "cursor-default" : "hover:shadow-card"} ${(T.requestId || T.id) === (highlight == null ? void 0 : highlight.id) ? "shadow-lift ring-2 ring-accent-strong ring-offset-1" : ""}`}
                       style={{
                         background: `color-mix(in oklch, ${C.color} ${H ? 9 : 16}%, var(--c-card))`,
                         border: H
@@ -759,7 +761,8 @@ export function TeamTimeline({
                           onClick={() =>
                             onChipClick == null ? void 0 : onChipClick(S)
                           }
-                          className={`absolute flex h-6 items-center gap-1 truncate rounded-chip px-2 text-[11px] font-semibold transition-[background,border-color,box-shadow] duration-[180ms] ease-out hover:shadow-card ${(S.requestId || S.id) === (highlight == null ? void 0 : highlight.id) ? "shadow-lift ring-2 ring-accent-strong ring-offset-1" : ""}`}
+                          aria-disabled={S.viewOnly || void 0}
+                          className={`absolute flex h-6 items-center gap-1 truncate rounded-chip px-2 text-[11px] font-semibold transition-[background,border-color,box-shadow] duration-[180ms] ease-out ${S.viewOnly ? "cursor-default" : "hover:shadow-card"} ${(S.requestId || S.id) === (highlight == null ? void 0 : highlight.id) ? "shadow-lift ring-2 ring-accent-strong ring-offset-1" : ""}`}
                           style={{
                             top: `${8 + R * 28}px`,
                             left: m(S.s),
