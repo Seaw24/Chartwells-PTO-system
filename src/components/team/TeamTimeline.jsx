@@ -12,13 +12,12 @@ import { rangesOverlap } from "../../utils/dateHelpers.jsx";
 import { format as Vendor_format } from "date-fns";
 import React from "react";
 import { ChevronRight as Vendor_ChevronRight } from "lucide-react";
-import { TriangleAlert as Vendor_TriangleAlert } from "lucide-react";
+import { Plus as Vendor_Plus } from "lucide-react";
 import { Check as Vendor_Check } from "lucide-react";
 import { Avatar } from "../ui/Avatar.jsx";
 import { firstName } from "../../utils/constants.jsx";
 import { useCatalog } from "../../context/CatalogContext.jsx";
 import { ChevronLeft as Vendor_ChevronLeft } from "lucide-react";
-import { useEntered } from "../../hooks/motion.jsx";
 export const ME = ["S", "M", "T", "W", "T", "F", "S"];
 export const DE = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function buildTeamTimeline({
@@ -191,6 +190,9 @@ export function DesktopTeamTimeline({
   onSelectPerson: onSelectPerson,
   onBarClick: onBarClick,
   highlightId: highlightId,
+  canOpenPerson: canOpenPerson,
+  minRequestIso: minRequestIso,
+  onStartRequest: onStartRequest,
 }) {
   const { days: days, teams: teams, unit: unit } = data,
     h = unit === "month",
@@ -208,7 +210,13 @@ export function DesktopTeamTimeline({
             width: h ? g : void 0,
           }}
         >
-          <TeamHeader days={days} dense={h} dayW={y} />
+          <TeamHeader
+            days={days}
+            dense={h}
+            dayW={y}
+            minRequestIso={minRequestIso}
+            onStartRequest={onStartRequest}
+          />
           <div className="relative">
             <TeamGrid days={days} todayIdx={f} dense={h} dayW={y} />
             <div className="relative z-10">
@@ -226,6 +234,7 @@ export function DesktopTeamTimeline({
                   collapsed={!!collapsed[k.id]}
                   onToggle={() => onToggleTeam(k.id)}
                   activeUserId={activeUserId}
+                  canOpenPerson={canOpenPerson}
                   onSelectPerson={onSelectPerson}
                   onBarClick={onBarClick}
                   highlightId={highlightId}
@@ -284,7 +293,15 @@ export function TeamGrid({
     </div>
   );
 }
-export function TeamHeader({ days: days, dense: dense, dayW: dayW }) {
+// With onStartRequest, each day cell starts a request on that day; days before minRequestIso
+// stay inert.
+export function TeamHeader({
+  days: days,
+  dense: dense,
+  dayW: dayW,
+  minRequestIso: minRequestIso,
+  onStartRequest: onStartRequest,
+}) {
   return (
     <div className="sticky top-0 z-30 flex border-b border-line bg-card/95 backdrop-blur-sm">
       <div
@@ -296,41 +313,55 @@ export function TeamHeader({ days: days, dense: dense, dayW: dayW }) {
         <span className="eyebrow">{"Roster"}</span>
       </div>
       <div className={`flex ${dense ? "shrink-0" : "flex-1"}`}>
-        {days.map((r) => (
-          <div
-            style={ll(dense, dayW)}
-            className={`${ol(dense)} flex flex-col items-center gap-0.5 ${dense ? "py-1.5" : "py-2"} ${r.isToday ? "bg-accent-soft/80" : r.isWeekend ? "bg-panel/55" : ""}`}
-            key={r.iso}
-          >
-            <span
-              className={`font-semibold uppercase tracking-[0.08em] ${dense ? "text-[8px]" : "text-[10px]"} ${r.isToday ? "text-accent-ink" : r.isWeekend ? "text-ink-mute/70" : "text-ink-mute"}`}
+        {days.map((r) => {
+          const i =
+            !!onStartRequest && !(minRequestIso && r.iso < minRequestIso);
+          return (
+            <button
+              type="button"
+              disabled={!i}
+              onClick={i ? () => onStartRequest(r.iso) : void 0}
+              title={i ? "Request time off" : void 0}
+              aria-label={i ? `Request time off starting ${r.iso}` : void 0}
+              style={ll(dense, dayW)}
+              className={`${ol(dense)} group relative flex flex-col items-center gap-0.5 outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${dense ? "py-1.5" : "py-2"} ${i ? `press ${r.isToday ? "hover:bg-accent-soft" : "hover:bg-accent-soft/55"}` : "cursor-default"} ${r.isToday ? "bg-accent-soft/80" : r.isWeekend ? "bg-panel/55" : ""}`}
+              key={r.iso}
             >
-              {dense ? r.dowLetter : r.dowShort}
-            </span>
-            {r.isToday ? (
+              {i && !dense && (
+                <span className="pointer-events-none absolute right-1 top-1 grid h-4 w-4 origin-top-right scale-75 place-items-center rounded-full bg-accent-strong text-white opacity-0 shadow-btn transition-[opacity,transform] duration-150 ease-out group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100">
+                  <Vendor_Plus size={11} strokeWidth={3} />
+                </span>
+              )}
               <span
-                className={`grid place-items-center rounded-full bg-accent-strong font-bold tabular text-white shadow-btn ${dense ? "h-[19px] w-[19px] text-[10px]" : "h-[22px] w-[22px] text-[12px]"}`}
+                className={`font-semibold uppercase tracking-[0.08em] ${dense ? "text-[8px]" : "text-[10px]"} ${r.isToday ? "text-accent-ink" : r.isWeekend ? "text-ink-mute/70" : "text-ink-mute"}`}
               >
-                {r.dateNum}
+                {dense ? r.dowLetter : r.dowShort}
               </span>
-            ) : (
-              <span
-                className={`grid place-items-center font-bold tabular ${dense ? "h-[19px] text-[11px]" : "h-[22px] text-[13px]"} ${r.holiday ? "text-warning-ink" : r.isWeekend ? "text-ink-mute" : "text-ink"}`}
-              >
-                {r.dateNum}
-              </span>
-            )}
-            {!dense &&
-              (r.holiday ? (
+              {r.isToday ? (
                 <span
-                  className="h-1 w-1 rounded-full bg-warning"
-                  title={r.holiday.name}
-                />
+                  className={`grid place-items-center rounded-full bg-accent-strong font-bold tabular text-white shadow-btn ${dense ? "h-[19px] w-[19px] text-[10px]" : "h-[22px] w-[22px] text-[12px]"}`}
+                >
+                  {r.dateNum}
+                </span>
               ) : (
-                <span className="h-1 w-1" />
-              ))}
-          </div>
-        ))}
+                <span
+                  className={`grid place-items-center font-bold tabular ${dense ? "h-[19px] text-[11px]" : "h-[22px] text-[13px]"} ${r.holiday ? "text-warning-ink" : r.isWeekend ? "text-ink-mute" : "text-ink"}`}
+                >
+                  {r.dateNum}
+                </span>
+              )}
+              {!dense &&
+                (r.holiday ? (
+                  <span
+                    className="h-1 w-1 rounded-full bg-warning"
+                    title={r.holiday.name}
+                  />
+                ) : (
+                  <span className="h-1 w-1" />
+                ))}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -346,11 +377,11 @@ export function TeamSection({
   collapsed: collapsed,
   onToggle: onToggle,
   activeUserId: activeUserId,
+  canOpenPerson: canOpenPerson,
   onSelectPerson: onSelectPerson,
   onBarClick: onBarClick,
   highlightId: highlightId,
 }) {
-  const p = team.shortDays.length === 0;
   return (
     <div className="border-b border-line last:border-b-0">
       <button
@@ -380,19 +411,10 @@ export function TeamSection({
           </div>
           <div className="overflow-hidden whitespace-nowrap pl-[14px] text-[11px] font-semibold leading-tight">
             {team.anyoneOff ? (
-              p ? (
-                <span className="font-medium text-ink-mute">
-                  {team.offCount}
-                  {" off"}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-danger-ink">
-                  <Vendor_TriangleAlert size={11} strokeWidth={2.5} />
-                  {dense
-                    ? `Short ${team.shortDays.length} day${team.shortDays.length === 1 ? "" : "s"}`
-                    : `Short ${team.shortDays.map((y) => y.dowShort).join(", ")}`}
-                </span>
-              )
+              <span className="font-medium text-ink-mute">
+                {team.offCount}
+                {" off"}
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1 font-medium text-ink-mute">
                 <Vendor_Check
@@ -417,9 +439,8 @@ export function TeamSection({
           aria-hidden="true"
         />
       </button>
-      {!collapsed && (
-        <>
-          {team.rows.map((y, g) => (
+      {!collapsed &&
+        team.rows.map((y, g) => (
             <TeamPersonRow
               row={y}
               index={stagger + g}
@@ -428,20 +449,13 @@ export function TeamSection({
               dayW={dayW}
               gutter={gutter}
               isSelf={y.user.id === activeUserId}
+              canOpen={canOpenPerson ? canOpenPerson(y.user) : !0}
               onSelectPerson={onSelectPerson}
               onBarClick={onBarClick}
               highlightId={highlightId}
               key={y.user.id}
             />
-          ))}
-          <TeamCoverageTotals
-            coverage={team.coverage}
-            dense={dense}
-            dayW={dayW}
-            size={team.size}
-          />
-        </>
-      )}
+        ))}
     </div>
   );
 }
@@ -453,29 +467,14 @@ export function TeamPersonRow({
   dayW: dayW,
   gutter: gutter,
   isSelf: isSelf,
+  canOpen = !0,
   onSelectPerson: onSelectPerson,
   onBarClick: onBarClick,
   highlightId: highlightId,
 }) {
-  const d = row.lanes.count * Bx + 14;
-  return (
-    <div
-      style={{
-        "--i": index,
-      }}
-      className="stagger-in group/row flex border-t border-line-soft first:border-t-0"
-    >
-      <button
-        type="button"
-        onClick={() =>
-          onSelectPerson == null ? void 0 : onSelectPerson(row.user)
-        }
-        className="press-card sticky left-0 z-20 flex shrink-0 items-center gap-2.5 border-r border-line bg-card px-4 text-left outline-none group-hover/row:bg-panel/60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
-        style={{
-          width: Zs,
-        }}
-        aria-label={`Open ${row.user.name}`}
-      >
+  const d = row.lanes.count * Bx + 14,
+    f = (
+      <>
         <Avatar name={row.user.name} id={row.user.id} size="xs" />
         {isSelf ? (
           <span className="flex min-w-0 items-baseline gap-1">
@@ -491,7 +490,39 @@ export function TeamPersonRow({
             {dense ? firstName(row.user.name) : row.user.name}
           </span>
         )}
-      </button>
+      </>
+    );
+  return (
+    <div
+      style={{
+        "--i": index,
+      }}
+      className="stagger-in group/row flex border-t border-line-soft first:border-t-0"
+    >
+      {canOpen ? (
+        <button
+          type="button"
+          onClick={() =>
+            onSelectPerson == null ? void 0 : onSelectPerson(row.user)
+          }
+          className="press-card sticky left-0 z-20 flex shrink-0 items-center gap-2.5 border-r border-line bg-card px-4 text-left outline-none group-hover/row:bg-panel/60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+          style={{
+            width: Zs,
+          }}
+          aria-label={`Open ${row.user.name}`}
+        >
+          {f}
+        </button>
+      ) : (
+        <div
+          className="sticky left-0 z-20 flex shrink-0 items-center gap-2.5 border-r border-line bg-card px-4"
+          style={{
+            width: Zs,
+          }}
+        >
+          {f}
+        </div>
+      )}
       <div
         className={`relative transition-colors group-hover/row:bg-panel/30 ${dense ? "shrink-0" : "flex-1"}`}
         style={{
@@ -503,15 +534,17 @@ export function TeamPersonRow({
             : {}),
         }}
       >
-        <button
-          type="button"
-          onClick={() =>
-            onSelectPerson == null ? void 0 : onSelectPerson(row.user)
-          }
-          className="absolute inset-0 z-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
-          aria-label={`Open ${row.user.name}`}
-          title={`Open ${firstName(row.user.name)}`}
-        />
+        {canOpen && (
+          <button
+            type="button"
+            onClick={() =>
+              onSelectPerson == null ? void 0 : onSelectPerson(row.user)
+            }
+            className="absolute inset-0 z-0 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+            aria-label={`Open ${row.user.name}`}
+            title={`Open ${firstName(row.user.name)}`}
+          />
+        )}
         {row.lanes.bars.map((f) => (
           <TeamRequestBar
             bar={f}
@@ -551,10 +584,11 @@ export function TeamRequestBar({
     <button
       type="button"
       onClick={(g) => {
-        (g.stopPropagation(), onBarClick());
+        (g.stopPropagation(), bar.viewOnly || onBarClick());
       }}
+      aria-disabled={bar.viewOnly || void 0}
       title={`${l == null ? void 0 : l.name} · ${bar.status}`}
-      className={`press group absolute z-10 flex animate-bar-wipe items-center gap-1.5 overflow-hidden font-semibold outline-none hover:z-20 hover:-translate-y-px hover:shadow-card focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${dense ? "justify-center text-[10px]" : "text-[11.5px]"} ${f ? "ring-2 ring-accent ring-offset-1" : ""}`}
+      className={`group absolute z-10 flex animate-bar-wipe items-center gap-1.5 overflow-hidden font-semibold outline-none ${bar.viewOnly ? "cursor-default" : "press hover:z-20 hover:-translate-y-px hover:shadow-card"} focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${dense ? "justify-center text-[10px]" : "text-[11.5px]"} ${f ? "ring-2 ring-accent ring-offset-1" : ""}`}
       style={{
         animationDelay: `${Math.min(index, 10) * 26 + 40}ms`,
         top: `${10 + bar.lane * Bx}px`,
@@ -603,96 +637,6 @@ export function TeamRequestBar({
     </button>
   );
 }
-export function TeamCoverageTotals({
-  coverage: coverage,
-  dense: dense,
-  dayW: dayW,
-  size: size,
-}) {
-  const s = useEntered();
-  return (
-    <div className="flex border-t border-line">
-      <div
-        className="sticky left-0 z-20 flex shrink-0 items-center border-r border-line bg-card px-4 py-2"
-        style={{
-          width: Zs,
-        }}
-      >
-        <span className="eyebrow">{"On shift"}</span>
-      </div>
-      <div
-        className={`flex ${dense ? "shrink-0" : "flex-1"}`}
-        style={
-          dense
-            ? {
-                width: dayW * coverage.length,
-              }
-            : void 0
-        }
-      >
-        {coverage.map((i, o) => {
-          if (i.closed)
-            return (
-              <div
-                style={ll(dense, dayW)}
-                className={`${ol(dense)} flex items-center justify-center py-2`}
-                key={i.iso}
-              >
-                <span className="text-[11px] text-ink-mute/45">{"·"}</span>
-              </div>
-            );
-          const c = size ? (i.present / size) * 100 : 0;
-          return (
-            <div
-              style={ll(dense, dayW)}
-              title={`${i.present} of ${size} on shift`}
-              className={`${ol(dense)} flex flex-col items-center gap-1.5 py-2 ${dense ? "px-1" : "px-2"}`}
-              key={i.iso}
-            >
-              <div
-                className={`h-1.5 overflow-hidden rounded-full ${dense ? "w-[70%]" : "w-[64%] max-w-[140px]"}`}
-                style={{
-                  background: i.short
-                    ? "var(--c-danger-soft)"
-                    : "var(--c-line)",
-                }}
-              >
-                <div
-                  className="h-full origin-left rounded-full transition-transform duration-[420ms] ease-quart"
-                  style={{
-                    width: "100%",
-                    transform: `scaleX(${s ? c / 100 : 0})`,
-                    transitionDelay: `${Math.min(o, 6) * 26}ms`,
-                    background: i.short
-                      ? "var(--c-danger-strong)"
-                      : "color-mix(in oklch, var(--c-navy) 34%, var(--c-line))",
-                  }}
-                />
-              </div>
-              <span
-                className="inline-flex items-center gap-0.5 text-[11px] font-bold tabular leading-none"
-                style={{
-                  color: i.short ? "var(--c-danger-ink)" : "var(--c-ink-mute)",
-                }}
-              >
-                {i.short && (
-                  <Vendor_TriangleAlert size={10} strokeWidth={2.75} />
-                )}
-                {i.present}
-                {!dense && (
-                  <span className="font-medium opacity-50">
-                    {"/"}
-                    {size}
-                  </span>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 export function MobileTeamTimeline({
   data: data,
   collapsed: collapsed,
@@ -700,11 +644,20 @@ export function MobileTeamTimeline({
   activeUserId: activeUserId,
   onSelectPerson: onSelectPerson,
   onBarClick: onBarClick,
+  canOpenPerson: canOpenPerson,
+  minRequestIso: minRequestIso,
+  onStartRequest: onStartRequest,
 }) {
   const { days: days, teams: teams, unit: unit } = data;
   return (
     <div className="space-y-4">
-      {unit === "week" && <MobileTeamSummary days={days} teams={teams} />}
+      {unit === "week" && (
+        <MobileTeamSummary
+          days={days}
+          minRequestIso={minRequestIso}
+          onStartRequest={onStartRequest}
+        />
+      )}
       {teams.map((u) => {
         const h = !!collapsed[u.id];
         return (
@@ -728,15 +681,7 @@ export function MobileTeamTimeline({
                   {u.size}
                 </span>
               </span>
-              {u.shortDays.length > 0 ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-danger-ink">
-                  <Vendor_TriangleAlert size={11} strokeWidth={2.5} />
-                  {" Short "}
-                  {unit === "week"
-                    ? u.shortDays.map((d) => d.dowShort).join(", ")
-                    : `${u.shortDays.length}d`}
-                </span>
-              ) : u.anyoneOff ? (
+              {u.anyoneOff ? (
                 <span className="text-[11px] font-medium text-ink-mute">
                   {u.offCount}
                   {" off"}
@@ -755,69 +700,82 @@ export function MobileTeamTimeline({
             {!h &&
               (u.rows.length > 0 ? (
                 <ul className="overflow-hidden rounded-card border border-line bg-card shadow-card">
-                  {u.rows.map((d) => (
-                    <li
-                      className="border-t border-line-soft first:border-t-0"
-                      key={d.user.id}
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onSelectPerson == null
-                            ? void 0
-                            : onSelectPerson(d.user)
-                        }
-                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none active:bg-panel/50"
-                      >
-                        <Avatar name={d.user.name} id={d.user.id} size="sm" />
-                        <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-                            {firstName(d.user.name)}
-                            {d.user.id === activeUserId && (
-                              <span className="text-[10px] font-semibold text-ink-mute/70">
-                                {"You"}
-                              </span>
-                            )}
-                          </p>
-                          {d.bars.length > 0 ? (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {d.bars.map((f) => (
-                                <MobileTeamBar
-                                  bar={f}
-                                  onClick={(p) => {
-                                    (p.stopPropagation(),
-                                      onBarClick == null ||
-                                        onBarClick(f, d.user));
-                                  }}
-                                  key={f.key}
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-ink-mute">
-                              <Vendor_Check
-                                size={11}
-                                strokeWidth={2.5}
-                                className="text-success-ink"
-                              />
-                              {" In this "}
-                              {unit}
+                  {u.rows.map((d) => {
+                    const p = canOpenPerson ? canOpenPerson(d.user) : !0,
+                      f = (
+                        <>
+                          <Avatar name={d.user.name} id={d.user.id} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+                              {firstName(d.user.name)}
+                              {d.user.id === activeUserId && (
+                                <span className="text-[10px] font-semibold text-ink-mute/70">
+                                  {"You"}
+                                </span>
+                              )}
                             </p>
-                          )}
-                        </div>
-                        <Vendor_ChevronRight
-                          size={16}
-                          className="shrink-0 text-ink-mute/50"
-                        />
-                      </button>
-                    </li>
-                  ))}
+                            {d.bars.length > 0 ? (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {d.bars.map((y) => (
+                                  <MobileTeamBar
+                                    bar={y}
+                                    onClick={(g) => {
+                                      (g.stopPropagation(),
+                                        y.viewOnly ||
+                                          onBarClick == null ||
+                                          onBarClick(y, d.user));
+                                    }}
+                                    key={y.key}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-ink-mute">
+                                <Vendor_Check
+                                  size={11}
+                                  strokeWidth={2.5}
+                                  className="text-success-ink"
+                                />
+                                {" In this "}
+                                {unit}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      );
+                    return (
+                      <li
+                        className="border-t border-line-soft first:border-t-0"
+                        key={d.user.id}
+                      >
+                        {p ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSelectPerson == null
+                                ? void 0
+                                : onSelectPerson(d.user)
+                            }
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none active:bg-panel/50"
+                          >
+                            {f}
+                            <Vendor_ChevronRight
+                              size={16}
+                              className="shrink-0 text-ink-mute/50"
+                            />
+                          </button>
+                        ) : (
+                          <div className="flex w-full items-center gap-3 px-3 py-2.5">
+                            {f}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <div className="rounded-card border border-line bg-card px-3 py-3 text-[12px] text-ink-mute shadow-card">
-                  {
-                    "Aggregate coverage only. Names and leave types stay private for this team."
-                  }
+                  {"No one on this team."}
                 </div>
               ))}
           </div>
@@ -826,34 +784,25 @@ export function MobileTeamTimeline({
     </div>
   );
 }
-export function MobileTeamSummary({ days: days, teams: teams }) {
-  const n = days.map((r, s) => {
-    const i = teams.reduce((l, u) => l + u.size, 0),
-      o = teams.reduce((l, u) => {
-        var h;
-        return (
-          l + (((h = u.coverage[s]) == null ? void 0 : h.present) ?? u.size)
-        );
-      }, 0),
-      c = teams.some((l) => {
-        var u;
-        return (u = l.coverage[s]) == null ? void 0 : u.short;
-      });
-    return {
-      ...r,
-      size: i,
-      present: o,
-      short: c && !r.isWeekend,
-    };
-  });
+// The week's days; with onStartRequest, tapping one starts a request on that day.
+export function MobileTeamSummary({
+  days: days,
+  minRequestIso: minRequestIso,
+  onStartRequest: onStartRequest,
+}) {
   return (
     <div className="rounded-card border border-line bg-card p-2 shadow-card">
       <div className="flex">
-        {n.map((r) => {
-          const s = r.size ? (r.present / r.size) * 100 : 0;
+        {days.map((r) => {
+          const s = minRequestIso && r.iso < minRequestIso,
+            i = !!onStartRequest && !s;
           return (
-            <div
-              className={`flex flex-1 flex-col items-center gap-1 rounded-[9px] py-1.5 ${r.isToday ? "bg-accent-soft/60" : ""}`}
+            <button
+              type="button"
+              disabled={!i}
+              onClick={i ? () => onStartRequest(r.iso) : void 0}
+              aria-label={i ? `Request time off starting ${r.iso}` : void 0}
+              className={`flex flex-1 flex-col items-center gap-1 rounded-[9px] py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent ${s ? "opacity-45" : i ? "active:bg-accent-soft/70" : ""} ${r.isToday ? "bg-accent-soft/60" : ""}`}
               key={r.iso}
             >
               <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-mute">
@@ -870,29 +819,7 @@ export function MobileTeamSummary({ days: days, teams: teams }) {
                   {r.dateNum}
                 </span>
               )}
-              {r.isWeekend ? (
-                <span className="h-3 text-[10px] leading-3 text-ink-mute/40">
-                  {"·"}
-                </span>
-              ) : r.short ? (
-                <Vendor_TriangleAlert
-                  size={12}
-                  strokeWidth={2.5}
-                  className="text-danger-ink"
-                />
-              ) : (
-                <span className="mt-0.5 h-1.5 w-6 overflow-hidden rounded-full bg-line">
-                  <span
-                    className="block h-full rounded-full"
-                    style={{
-                      width: `${s}%`,
-                      background:
-                        "color-mix(in oklch, var(--c-navy) 34%, var(--c-line))",
-                    }}
-                  />
-                </span>
-              )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -908,7 +835,8 @@ export function MobileTeamBar({ bar: bar, onClick: onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-chip px-2 py-0.5 text-[11px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      aria-disabled={bar.viewOnly || void 0}
+      className={`inline-flex items-center gap-1.5 rounded-chip px-2 py-0.5 text-[11px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent ${bar.viewOnly ? "cursor-default" : ""}`}
       style={{
         color: `color-mix(in oklch, ${s} 64%, var(--c-ink))`,
         background: i
