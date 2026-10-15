@@ -1,4 +1,3 @@
-import { useResource } from "../../hooks/useResource.jsx";
 import { toDateLocal } from "../../utils/dateHelpers.jsx";
 import { startOfMonth as Vendor_startOfMonth } from "date-fns";
 import { differenceInCalendarDays as Vendor_differenceInCalendarDays } from "date-fns";
@@ -7,10 +6,10 @@ import { startOfWeek as Vendor_startOfWeek } from "date-fns";
 import { addDays as Vendor_addDays } from "date-fns";
 import { toISO } from "../../utils/dateHelpers.jsx";
 import { belongsToTeam } from "../../utils/constants.jsx";
+import { isGodAdmin } from "../../utils/constants.jsx";
 import { lineEntriesForRequest } from "../../utils/requestHelpers.jsx";
 import { rangesOverlap } from "../../utils/dateHelpers.jsx";
 import { format as Vendor_format } from "date-fns";
-import { useDataSource } from "../../data/dataSource.jsx";
 import React from "react";
 import { ChevronRight as Vendor_ChevronRight } from "lucide-react";
 import { TriangleAlert as Vendor_TriangleAlert } from "lucide-react";
@@ -22,7 +21,6 @@ import { ChevronLeft as Vendor_ChevronLeft } from "lucide-react";
 import { useEntered } from "../../hooks/motion.jsx";
 export const ME = ["S", "M", "T", "W", "T", "F", "S"];
 export const DE = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-export const Vp = (e, t) => e > 0 && e * 3 > t;
 export function buildTeamTimeline({
   todayIso: todayIso,
   anchorIso: anchorIso,
@@ -31,7 +29,6 @@ export function buildTeamTimeline({
   requests: requests,
   teams = [],
   holidays = [],
-  coverageRows = [],
 }) {
   const l = toDateLocal(anchorIso);
   let u, h;
@@ -71,12 +68,8 @@ export function buildTeamTimeline({
     p = f[0].iso,
     y = f[h - 1].iso,
     g = teams.map((m) => {
-      // Deactivated people sit below active teammates.
-      const x = users
-          .filter((E) => belongsToTeam(E, m.id))
-          .sort((E, I) => Number(E.isActive === !1) - Number(I.isActive === !1)),
-        b = coverageRows.filter((E) => E.teamId === m.id),
-        N = Math.max(x.length, ...b.map((E) => E.outCount + E.onShiftCount), 0),
+      const x = users.filter((E) => belongsToTeam(E, m.id)),
+        N = x.length,
         _ = x
           .map((E) => {
             const T = requests
@@ -109,6 +102,7 @@ export function buildTeamTimeline({
                   note: C.note,
                   decidedBy: C.decidedBy,
                   denialReason: C.denialReason,
+                  viewOnly: !!C.viewOnly,
                 };
               })
               .sort((C, H) => C.startIdx - H.startIdx || C.endIdx - H.endIdx);
@@ -118,68 +112,18 @@ export function buildTeamTimeline({
               lanes: placeTeamLanes(T),
             };
           })
-          .sort((E, T) => E.user.name.localeCompare(T.user.name)),
-        j = f.map((E) => {
-          const T = b.find((H) => H.day === E.iso);
-          if (T) {
-            const H = T.outCount + T.onShiftCount;
-            return {
-              iso: E.iso,
-              closed: H === 0,
-              out: T.outCount,
-              present: T.onShiftCount,
-              short: Vp(T.outCount, H),
-            };
-          }
-          if (E.isWeekend)
-            return {
-              iso: E.iso,
-              closed: !0,
-              out: 0,
-              present: N,
-              short: !1,
-            };
-          const C = x.filter((H) =>
-            requests.some(
-              (I) =>
-                I.userId === H.id &&
-                lineEntriesForRequest(I).some(
-                  (D) =>
-                    D.status === "approved" &&
-                    rangesOverlap(E.iso, E.iso, D.start, D.end),
-                ),
-            ),
-          ).length;
-          return {
-            iso: E.iso,
-            closed: !1,
-            out: C,
-            present: N - C,
-            short: Vp(C, N),
-          };
-        }),
-        S = j
-          .filter((E) => E.short)
-          .map((E) => {
-            const T = f.find((C) => C.iso === E.iso);
-            return {
-              iso: E.iso,
-              dowShort: T.dowShort,
-              dateNum: T.dateNum,
-            };
-          }),
-        R = Math.max(
-          _.filter((E) => E.bars.length > 0).length,
-          ...j.map((E) => E.out),
-          0,
-        );
+          // Deactivated people sit below active teammates.
+          .sort(
+            (E, T) =>
+              Number(E.user.isActive === !1) - Number(T.user.isActive === !1) ||
+              E.user.name.localeCompare(T.user.name),
+          ),
+        R = _.filter((E) => E.bars.length > 0).length;
       return {
         id: m.id,
         name: m.name,
         size: N,
         rows: _,
-        coverage: j,
-        shortDays: S,
         offCount: R,
         anyoneOff: R > 0,
       };
@@ -220,14 +164,19 @@ export function teamRangeLabel(e, t) {
     ? `${Vendor_format(n, "MMM d")} – ${Vendor_format(r, "d")}`
     : `${Vendor_format(n, "MMM d")} – ${Vendor_format(r, "MMM d")}`;
 }
-export function useCoverage(from, to) {
-  const { coverageForRange } = useDataSource();
-  const { data = [] } = useResource(
-    ["team-coverage", from, to],
-    () => coverageForRange(from, to),
-    !!from && !!to,
-  );
-  return data;
+// HR sees every team open. Everyone else gets the teams they belong to first and open, with the
+// rest after them, collapsed.
+export function initialTeamLayout(viewer, teams = []) {
+  if (isGodAdmin(viewer?.role)) return { teams, collapsed: {} };
+  const ids = new Set((viewer?.memberships ?? []).map((m) => m.teamId));
+  viewer?.team && ids.add(viewer.team);
+  const mine = teams.filter((t) => ids.has(t.id));
+  if (mine.length === 0) return { teams, collapsed: {} };
+  const rest = teams.filter((t) => !ids.has(t.id));
+  return {
+    teams: [...mine, ...rest],
+    collapsed: Object.fromEntries(rest.map((t) => [t.id, true])),
+  };
 }
 
 export const Zs = 180;

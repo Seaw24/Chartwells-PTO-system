@@ -14,6 +14,7 @@ const helpers = await server.ssrLoadModule("/src/utils/requestHelpers.jsx");
 const names = await server.ssrLoadModule("/src/utils/constants.jsx");
 const holiday = await server.ssrLoadModule("/src/utils/holidayDayOff.jsx");
 const approvals = await server.ssrLoadModule("/src/pages/Approvals.jsx");
+const timeline = await server.ssrLoadModule("/src/components/team/TeamTimeline.jsx");
 after(() => server.close());
 test("business days skip regular days off and charge company holidays", () => {
   assert.equal(dates.businessDays("2026-09-07", "2026-09-11", [0, 6]), 5);
@@ -747,4 +748,60 @@ test("sign-in only returns to paths inside the app", async () => {
   assert.equal(safeReturnPath("/login"), "/");
   assert.equal(safeReturnPath("/welcome"), "/");
   assert.equal(safeReturnPath(undefined), "/");
+});
+test("HR opens every team; everyone else gets their own teams first and open", () => {
+  const teams = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const hr = timeline.initialTeamLayout({ role: "god_admin", memberships: [] }, teams);
+  assert.deepEqual(hr.teams.map((t) => t.id), ["a", "b", "c"]);
+  assert.deepEqual(hr.collapsed, {});
+  const emp = timeline.initialTeamLayout(
+    { role: "employee", team: "c", memberships: [{ teamId: "c", role: "employee" }] },
+    teams,
+  );
+  assert.deepEqual(emp.teams.map((t) => t.id), ["c", "a", "b"]);
+  assert.deepEqual(emp.collapsed, { a: true, b: true });
+  const mgr = timeline.initialTeamLayout(
+    {
+      role: "admin",
+      team: "b",
+      memberships: [
+        { teamId: "b", role: "admin" },
+        { teamId: "c", role: "employee" },
+      ],
+    },
+    teams,
+  );
+  assert.deepEqual(mgr.teams.map((t) => t.id), ["b", "c", "a"]);
+  assert.deepEqual(mgr.collapsed, { a: true });
+  const none = timeline.initialTeamLayout({ role: "employee", memberships: [] }, teams);
+  assert.deepEqual(none.collapsed, {});
+});
+test("the team timeline lists the whole roster, carries view-only bars, and has no coverage", () => {
+  const data = timeline.buildTeamTimeline({
+    todayIso: "2026-10-15",
+    anchorIso: "2026-10-15",
+    unit: "week",
+    teams: [{ id: "a", name: "A" }],
+    users: [
+      { id: "u1", name: "Ann", team: "a", memberships: [{ teamId: "a" }] },
+      { id: "u2", name: "Bob", team: "a", memberships: [{ teamId: "a" }] },
+    ],
+    requests: [
+      {
+        id: "r1",
+        userId: "u1",
+        status: "approved",
+        viewOnly: true,
+        lines: [{ type: "v", start: "2026-10-13", end: "2026-10-14" }],
+      },
+    ],
+  });
+  const team = data.teams[0];
+  assert.equal(team.size, 2);
+  assert.equal(team.rows.length, 2);
+  assert.equal(team.offCount, 1);
+  assert.equal(data.totalOff, 1);
+  assert.equal(team.rows[0].bars[0].viewOnly, true);
+  assert.equal("coverage" in team, false);
+  assert.equal("shortDays" in team, false);
 });
