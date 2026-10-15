@@ -23,7 +23,6 @@ import { LayoutDashboard as Vendor_LayoutDashboard } from "lucide-react";
 import { Calendar as Vendor_Calendar } from "lucide-react";
 import { Mail as Vendor_Mail } from "lucide-react";
 import { SquareCheckBig as Vendor_SquareCheckBig } from "lucide-react";
-import { Users as Vendor_Users } from "lucide-react";
 import { ChartColumn as Vendor_ChartColumn } from "lucide-react";
 import { Sidebar } from "./Sidebar.jsx";
 import { Outlet as Vendor_Outlet } from "react-router-dom";
@@ -233,9 +232,6 @@ export const TS = {
     title: "Approvals",
     subtitle: "Requests waiting on you",
   },
-  "/team": {
-    title: "Team",
-  },
   "/reports": {
     title: "Reports",
     subtitle: "Time-off patterns across the department",
@@ -314,11 +310,6 @@ export function AppLayout() {
         to: "/settings",
         label: "Settings",
         icon: Vendor_Settings,
-      },
-      canApprove(s == null ? void 0 : s.role) && {
-        to: "/team",
-        label: "Team",
-        icon: Vendor_Users,
       },
       isGodAdmin(s == null ? void 0 : s.role) && {
         to: "/reports",

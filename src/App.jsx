@@ -19,7 +19,6 @@ import { CalendarPage } from "./pages/CalendarPage.jsx";
 import { MyRequests } from "./pages/MyRequests.jsx";
 import { canApprove } from "./utils/constants.jsx";
 import { Approvals } from "./pages/Approvals.jsx";
-import { TeamPage } from "./pages/TeamPage.jsx";
 import { isGodAdmin } from "./utils/constants.jsx";
 import { Profile } from "./pages/Profile.jsx";
 import { DEMO_MODE } from "./data/dataSource.jsx";
@@ -107,13 +106,10 @@ export function App() {
                   </RoleGuard>
                 }
               />
+              {/* The Team page now lives on the Dashboard. */}
               <Vendor_Route
                 path="team"
-                element={
-                  <RoleGuard allow={canApprove}>
-                    <TeamPage />
-                  </RoleGuard>
-                }
+                element={<Vendor_Navigate to="/" replace={!0} />}
               />
               <Vendor_Route
                 path="reports"

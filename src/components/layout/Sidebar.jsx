@@ -10,7 +10,6 @@ import { LayoutDashboard as Vendor_LayoutDashboard } from "lucide-react";
 import { Calendar as Vendor_Calendar } from "lucide-react";
 import { Mail as Vendor_Mail } from "lucide-react";
 import { SquareCheckBig as Vendor_SquareCheckBig } from "lucide-react";
-import { Users as Vendor_Users } from "lucide-react";
 import { isGodAdmin } from "../../utils/constants.jsx";
 import { ChartColumn as Vendor_ChartColumn } from "lucide-react";
 import { Settings as Vendor_Settings } from "lucide-react";
@@ -168,11 +167,6 @@ export function Sidebar({
         icon: Vendor_SquareCheckBig,
         badge: _,
         accent: !0,
-      },
-      canApprove(n == null ? void 0 : n.role) && {
-        to: "/team",
-        label: "Team",
-        icon: Vendor_Users,
       },
       isGodAdmin(n == null ? void 0 : n.role) && {
         to: "/reports",
