@@ -277,16 +277,27 @@ export function DashboardView({
         : layout.teams.filter((t) => t.id === teamFilter),
     data = React.useMemo(
       () =>
+        !loading &&
         buildTeamTimeline({
           todayIso: todayIso,
-          anchorIso: anchor,
+          anchorIso: anchor ?? todayIso,
           unit: unit,
           users: users,
           requests: requests,
           holidays: holidays,
           teams: shown,
         }),
-      [todayIso, anchor, unit, users, requests, holidays, layout, teamFilter],
+      [
+        loading,
+        todayIso,
+        anchor,
+        unit,
+        users,
+        requests,
+        holidays,
+        layout,
+        teamFilter,
+      ],
     ),
     teamOptions = [
       {

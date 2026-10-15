@@ -132,7 +132,8 @@ export function Dashboard() {
     },
     [setNormalDaysOff, toast],
   );
-  if ((void 0, !p)) return <DashboardView loading={!0} />;
+  if ((void 0, !p))
+    return <DashboardView activeUser={e} todayIso={t} loading={!0} />;
   // Everyone sees every team's time off, as HR does; see mergeWhosOff.
   const merged = mergeWhosOff({
       requests: p.requests,
