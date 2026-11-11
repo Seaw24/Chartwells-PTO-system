@@ -805,3 +805,40 @@ test("the team timeline lists the whole roster, carries view-only bars, and has 
   assert.equal("coverage" in team, false);
   assert.equal("shortDays" in team, false);
 });
+test("people on no team get a No team group on the timeline, open for everyone", () => {
+  const teams = [{ id: "a", name: "A" }];
+  const users = [
+    { id: "u1", name: "Ann", team: "a", memberships: [{ teamId: "a" }] },
+    { id: "hr", name: "Hannah", team: null, memberships: [] },
+    { id: "gone", name: "Gus", team: "old", memberships: [{ teamId: "old" }] },
+  ];
+  const groups = timeline.withNoTeamGroup(teams, users);
+  assert.deepEqual(groups.map((t) => t.id), ["a", timeline.NO_TEAM_ID]);
+  assert.deepEqual(timeline.withNoTeamGroup(teams, users.slice(0, 1)), teams);
+  const emp = timeline.initialTeamLayout(
+    { role: "employee", team: "a", memberships: [{ teamId: "a" }] },
+    groups,
+  );
+  assert.deepEqual(emp.collapsed, {});
+  const data = timeline.buildTeamTimeline({
+    todayIso: "2026-10-15",
+    anchorIso: "2026-10-15",
+    unit: "week",
+    teams: groups,
+    users,
+    requests: [
+      {
+        id: "r1",
+        userId: "hr",
+        status: "approved",
+        viewOnly: true,
+        lines: [{ type: "v", start: "2026-10-13", end: "2026-10-14" }],
+      },
+    ],
+  });
+  const none = data.teams[1];
+  assert.equal(none.name, "No team");
+  assert.deepEqual(none.rows.map((r) => r.user.id), ["gone", "hr"]);
+  assert.equal(none.offCount, 1);
+  assert.equal(data.totalOff, 1);
+});

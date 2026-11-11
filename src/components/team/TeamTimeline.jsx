@@ -67,7 +67,7 @@ export function buildTeamTimeline({
     p = f[0].iso,
     y = f[h - 1].iso,
     g = teams.map((m) => {
-      const x = users.filter((E) => belongsToTeam(E, m.id)),
+      const x = users.filter((E) => inTimelineGroup(E, m)),
         N = x.length,
         _ = x
           .map((E) => {
@@ -139,6 +139,21 @@ export function buildTeamTimeline({
     rangeLabel: v,
   };
 }
+// People on none of the teams (HR, org-level accounts) get a "No team" group after the real teams,
+// so their time off still shows on everyone's timeline. It only appears when someone needs it.
+export const NO_TEAM_ID = "none";
+export function withNoTeamGroup(teams = [], users = []) {
+  const ids = teams.map((t) => t.id);
+  const group = { id: NO_TEAM_ID, name: "No team", outsideOf: ids };
+  return users.some((u) => inTimelineGroup(u, group))
+    ? [...teams, group]
+    : teams;
+}
+export function inTimelineGroup(user, group) {
+  return group.id === NO_TEAM_ID
+    ? !!user && !group.outsideOf.some((id) => belongsToTeam(user, id))
+    : belongsToTeam(user, group.id);
+}
 export function placeTeamLanes(e) {
   const t = [],
     n = e.map((r) => {
@@ -174,7 +189,10 @@ export function initialTeamLayout(viewer, teams = []) {
   const rest = teams.filter((t) => !ids.has(t.id));
   return {
     teams: [...mine, ...rest],
-    collapsed: Object.fromEntries(rest.map((t) => [t.id, true])),
+    // "No team" is a handful of org-level people; it stays open so their time off is seen.
+    collapsed: Object.fromEntries(
+      rest.filter((t) => t.id !== NO_TEAM_ID).map((t) => [t.id, true]),
+    ),
   };
 }
 

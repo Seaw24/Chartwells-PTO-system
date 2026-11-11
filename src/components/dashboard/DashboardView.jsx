@@ -17,11 +17,12 @@ import { SegmentedControl } from "../ui/SegmentedControl.jsx";
 import { Button } from "../ui/Button.jsx";
 import { toDateLocal } from "../../utils/dateHelpers.jsx";
 import { toISO } from "../../utils/dateHelpers.jsx";
-import { belongsToTeam } from "../../utils/constants.jsx";
 import { buildTeamTimeline } from "../team/TeamTimeline.jsx";
 import { initialTeamLayout } from "../team/TeamTimeline.jsx";
 import { DesktopTeamTimeline } from "../team/TeamTimeline.jsx";
 import { MobileTeamTimeline } from "../team/TeamTimeline.jsx";
+import { withNoTeamGroup } from "../team/TeamTimeline.jsx";
+import { inTimelineGroup } from "../team/TeamTimeline.jsx";
 export function PersonalSummary({ personal: personal }) {
   const { ptoTypeById: ptoTypeById } = useCatalog(),
     { balances = [], upcoming = [], pending = [] } = personal;
@@ -236,8 +237,8 @@ export function DashboardView({
 }) {
   const { teams: teams } = useCatalog(),
     layout = React.useMemo(
-      () => initialTeamLayout(activeUser, teams),
-      [activeUser, teams],
+      () => initialTeamLayout(activeUser, withNoTeamGroup(teams, users)),
+      [activeUser, teams, users],
     ),
     [unit, setUnit] = React.useState("week"),
     [anchor, setAnchor] = React.useState(todayIso),
@@ -303,12 +304,13 @@ export function DashboardView({
       {
         value: "all",
         label: "All teams",
-        hint: users.filter((u) => u.team).length,
+        hint: users.filter((u) => layout.teams.some((t) => inTimelineGroup(u, t)))
+          .length,
       },
       ...layout.teams.map((t) => ({
         value: t.id,
         label: t.name,
-        hint: users.filter((u) => belongsToTeam(u, t.id)).length,
+        hint: users.filter((u) => inTimelineGroup(u, t)).length,
       })),
     ];
   if (loading) return <DashboardSkeleton />;
