@@ -1718,7 +1718,7 @@ if (deployFunction) {
 - [ ] **Step 4: Dry run**
 
 Run: `node scripts/deploy-aws.mjs --function-only --function=notify --dry-run`
-Expected: `AWS account 836548369971; checking function.` then `Dry run complete. No AWS resources were changed.` (needs a live `aws login` session).
+Expected: `AWS account <AWS_ACCOUNT_ID>; checking function.` then `Dry run complete. No AWS resources were changed.` (needs a live `aws login` session).
 
 - [ ] **Step 5: Commit**
 
@@ -1748,7 +1748,7 @@ cp docker-compose.yml "docker-compose.yml.bak-notify-$stamp"
 # Appending to a file without a trailing newline would glue onto its last line.
 [ -z "$(tail -c1 .env)" ] || echo >> .env
 grep -q '^NOTIFY_SECRET=' .env || echo "NOTIFY_SECRET=$(openssl rand -hex 32)" >> .env
-grep -q '^APP_URL=' .env || echo 'APP_URL=https://d2hxxrhfzq1k3r.cloudfront.net' >> .env
+grep -q '^APP_URL=' .env || echo 'APP_URL=https://<AWS_CLOUDFRONT_DOMAIN>' >> .env
 grep -q '^EMAIL_FROM_NAME=' .env || echo 'EMAIL_FROM_NAME="Chartwells PTO"' >> .env
 python3 - <<'PY'
 p = "docker-compose.yml"
@@ -1768,7 +1768,7 @@ Expected: `compose OK; …` (compose may warn that `GMAIL_USER`/`GMAIL_APP_PASSW
 
 - [ ] **Step 2: The owner adds the Gmail credentials themselves**
 
-The owner opens AWS console → Systems Manager → Session Manager → Start session on `i-0ab29bf3040dc6657`, and pastes:
+The owner opens AWS console → Systems Manager → Session Manager → Start session on `<AWS_EC2_INSTANCE_ID>`, and pastes:
 
 ```bash
 bash -c 'f=/opt/chartwells/chartwells-supabase/.env; if grep -q "^GMAIL_USER=" "$f"; then echo "already set"; exit; fi; read -p "Gmail address: " GU; read -s -p "App Password: " GP; echo; [ -z "$(sudo tail -c1 "$f")" ] || echo | sudo tee -a "$f" >/dev/null; printf "GMAIL_USER=%s\nGMAIL_APP_PASSWORD=\"%s\"\n" "$GU" "$GP" | sudo tee -a "$f" >/dev/null; echo saved'
@@ -1857,7 +1857,7 @@ Run the dev server from the worktree against the live backend, and with the owne
 
 - [ ] **Step 7: Deploy the frontend from a combined checkout** (owner approves)
 
-Only once the Account-details work is committed in the main checkout: merge `request-emails` into `main` (superpowers:finishing-a-development-branch), run the full test suite and `node scripts/check-source.mjs` there, then back up the bucket (`aws s3 sync s3://chartwells-pto-app-836548369971 ~/Downloads/chartwells-pto-s3-backup-20261013-2`) and run `node scripts/deploy-aws.mjs --frontend-only` from the merged checkout. Wait for the invalidation, then check `curl -s https://d2hxxrhfzq1k3r.cloudfront.net/ | grep -o 'assets/index-[^"]*\.js'` names the new bundle and the live `Settings-*.js` still contains "Account details saved.".
+Only once the Account-details work is committed in the main checkout: merge `request-emails` into `main` (superpowers:finishing-a-development-branch), run the full test suite and `node scripts/check-source.mjs` there, then back up the bucket (`aws s3 sync s3://chartwells-pto-app-<AWS_ACCOUNT_ID> ~/Downloads/chartwells-pto-s3-backup-20261013-2`) and run `node scripts/deploy-aws.mjs --frontend-only` from the merged checkout. Wait for the invalidation, then check `curl -s https://<AWS_CLOUDFRONT_DOMAIN>/ | grep -o 'assets/index-[^"]*\.js'` names the new bundle and the live `Settings-*.js` still contains "Account details saved.".
 
 - [ ] **Step 8: Live check with the owner**
 

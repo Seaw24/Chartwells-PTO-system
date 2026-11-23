@@ -143,7 +143,7 @@ Decision (to the requester):
 
 ## Deployment
 
-Done over AWS Systems Manager on instance `i-0ab29bf3040dc6657`; the Supabase project is at
+Done over AWS Systems Manager on instance `<AWS_EC2_INSTANCE_ID>`; the Supabase project is at
 `/opt/chartwells/chartwells-supabase`. Each step is confirmed with the owner first.
 
 1. Copy `notify/` into `volumes/functions/`.
