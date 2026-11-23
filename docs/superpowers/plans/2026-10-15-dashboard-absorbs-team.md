@@ -156,4 +156,4 @@ export function initialTeamLayout(viewer, teams = []) {
 ### Task 5: Verify in the browser, then deploy
 
 - [ ] **Step 1:** Run the dev server against the real backend and check, desktop and phone width, Week and Month: day click opens a request starting that day; past days disabled; HR all expanded; employee/manager own teams first and expanded; single-team filter expanded; names open the drawer only where allowed; view-only bars inert; no coverage UI or private messages; `/team` lands on `/`; no Team nav link.
-- [ ] **Step 2:** Ask the user before deploying; then follow the AWS frontend deploy steps (build → back up S3 → upload assets then `index.html` → invalidate CloudFront `E28QGWFC6YNZD5`).
+- [ ] **Step 2:** Ask the user before deploying; then follow the AWS frontend deploy steps (build → back up S3 → upload assets then `index.html` → invalidate CloudFront `<AWS_CLOUDFRONT_DISTRIBUTION_ID>`).

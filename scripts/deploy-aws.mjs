@@ -3,12 +3,13 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const account = "836548369971";
-const region = "us-east-2";
-const bucket = `chartwells-pto-app-${account}`;
-const distribution = "E28QGWFC6YNZD5";
-const domain = "d2hxxrhfzq1k3r.cloudfront.net";
-const instance = "i-0ab29bf3040dc6657";
+// Deploy targets come from .env.local so no account or resource IDs live in the repo.
+const account = requiredEnv("AWS_ACCOUNT_ID");
+const region = envValue("AWS_REGION") || "us-east-2";
+const bucket = requiredEnv("AWS_S3_BUCKET");
+const distribution = requiredEnv("AWS_CLOUDFRONT_DISTRIBUTION_ID");
+const domain = requiredEnv("AWS_CLOUDFRONT_DOMAIN");
+const instance = requiredEnv("AWS_EC2_INSTANCE_ID");
 const functionsRoot = "/opt/chartwells/chartwells-supabase/volumes/functions";
 // Outside functionsRoot: every folder in there is served as a function.
 const backupRoot = "/opt/chartwells/function-backups";
@@ -47,6 +48,12 @@ function envValue(name) {
     .split(/\r?\n/)
     .find((item) => item.startsWith(`${name}=`));
   return line?.slice(name.length + 1).trim();
+}
+
+function requiredEnv(name) {
+  const value = envValue(name);
+  if (!value) throw new Error(`Set ${name} in .env.local before deploying.`);
+  return value;
 }
 
 function waitForCommand(commandId) {
